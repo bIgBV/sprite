@@ -1,5 +1,4 @@
 use std::{
-    alloc::System,
     env,
     time::{Duration, SystemTime},
 };
@@ -7,6 +6,8 @@ use std::{
 use anyhow::Result;
 use sqlx::SqlitePool;
 use tracing::{debug, error, instrument};
+
+use crate::uid::TagId;
 
 #[derive(Debug, Clone)]
 pub struct TimerStore {
@@ -20,8 +21,8 @@ pub struct Timer {
     /// The ID of this timer
     id: i64,
 
-    /// The UID this timer is associated with
-    unique_id: i64,
+    /// The TagId this timer is associated with
+    unique_id: String,
 
     /// When the timer was started
     start_time: i64,
@@ -40,13 +41,14 @@ impl TimerStore {
         Ok(TimerStore { pool })
     }
 
+    #[cfg(test)]
     async fn new_test(pool: SqlitePool) -> Result<Self> {
         Ok(TimerStore { pool })
     }
 
     /// Toggles the current timer for the given UID
     #[instrument(skip(self))]
-    pub async fn toggle_current(&self, uid: i64) -> Result<i64> {
+    pub async fn toggle_current(&self, uid: &TagId) -> Result<i64> {
         if let Some(mut timer) = self.current_timer(uid).await {
             // We already have an existing timer
             let timer_id = timer.id;
@@ -62,17 +64,30 @@ impl TimerStore {
 
             Ok(timer_id)
         } else {
+            debug!(tag_id = uid.as_ref(), "Creating new timer");
             // The start_time field has defaults to the current unix epoch
             self.create_timer(uid).await
         }
     }
 
-    async fn create_timer(&self, uid: i64) -> Result<i64> {
+    async fn get_timer(&self, timer_id: i64) -> Result<Timer> {
+        Ok(sqlx::query_as::<sqlx::sqlite::Sqlite, Timer>(
+            r#"
+SELECT * FROM TIMERS
+WHERE id = ?1"#,
+        )
+        .bind(timer_id)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    async fn create_timer(&self, uid: &TagId) -> Result<i64> {
+        let tag_id = uid.as_ref();
         let id = sqlx::query!(
             r#"
 INSERT INTO TIMERS (UNIQUE_ID, IS_CURRENT)
 VALUES (?1, true)"#,
-            uid
+            tag_id
         )
         .execute(&self.pool)
         .await?
@@ -98,13 +113,13 @@ where id = ?2
         Ok(rows == 1)
     }
 
-    async fn current_timer(&self, uid: i64) -> Option<Timer> {
+    async fn current_timer(&self, uid: &TagId) -> Option<Timer> {
         sqlx::query_as::<sqlx::sqlite::Sqlite, Timer>(
             r#"
 SELECT * FROM TIMERS
 WHERE unique_id = ?1 AND is_current"#,
         )
-        .bind(uid)
+        .bind(uid.as_ref())
         .fetch_one(&self.pool)
         .await
         .ok()
@@ -131,10 +146,34 @@ mod tests {
 
     #[traced_test]
     #[tokio::test]
-    async fn toggle_create_when_not_exist() {
+    async fn toggle_create_when_timer_does_not_exist() {
         let store = setup().await.unwrap();
-        let result = store.toggle_current(1).await.unwrap();
+        let uid = TagId::new("test-tag").unwrap();
+        let result = store.toggle_current(&uid).await.unwrap();
 
         assert_eq!(result, 1);
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn toggle_end_timer_when_current_already_exists() {
+        let uid = TagId::new("test-tag").unwrap();
+        let store = setup().await.unwrap();
+        let result = store.toggle_current(&uid).await.unwrap();
+        assert_eq!(result, 1);
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let result = store.toggle_current(&uid).await.unwrap();
+        assert_eq!(result, 1);
+
+        let timer = store.get_timer(result).await.unwrap();
+
+        let Some(timer_duration) = timer.duration else {
+            panic!("Timer hasn't been turned off");
+        };
+
+        assert!(timer_duration >= 2);
+        assert!(!timer.is_current)
     }
 }

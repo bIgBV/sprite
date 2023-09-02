@@ -1,27 +1,24 @@
 mod load_env;
 mod timer_store;
+mod uid;
 
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-    net::SocketAddr,
-};
+use std::net::SocketAddr;
 
 use anyhow::Result;
 use axum::{
     debug_handler,
     extract::State,
-    headers::UserAgent,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router, TypedHeader,
+    Json, Router,
 };
 use serde::Serialize;
 use timer_store::TimerStore;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
+use uid::TagId;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,7 +62,7 @@ async fn root() -> &'static str {
 
 #[derive(Debug, Serialize)]
 struct UserContent {
-    uid: i64,
+    uid: TagId,
     url: String,
 }
 
@@ -78,17 +75,16 @@ async fn toggle_timer(
     let timer_tag = headers
         .get("x-timer-tag")
         .ok_or(anyhow::anyhow!("Timer tag header was not found"))?;
-    let mut hasher = DefaultHasher::new();
-    timer_tag.hash(&mut hasher);
-    let uid = hasher.finish();
+    info!(tag = ?timer_tag, "Toggle timer");
 
-    info!(uid, message = "Toggelling timer");
-    let id = app.timer_store.toggle_current(uid.try_into()?).await?;
+    let uid = uid::TagId::new(timer_tag.to_str()?)?;
 
-    debug!(id, message = "Created timer");
+    let id = app.timer_store.toggle_current(&uid).await?;
+
+    debug!(id, message = "Toggled timer");
 
     Ok(Json(UserContent {
-        uid: uid.try_into()?,
+        uid,
         url: "https://url-here".to_string(),
     }))
 }
