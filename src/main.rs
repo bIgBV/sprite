@@ -21,7 +21,7 @@ use serde::Serialize;
 use timer_store::TimerStore;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -69,10 +69,9 @@ struct UserContent {
     url: String,
 }
 
-#[instrument(skip(app))]
+#[instrument(skip_all)]
 #[debug_handler]
 async fn toggle_timer(
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
     State(app): State<App>,
     headers: HeaderMap,
 ) -> Result<Json<UserContent>, AppError> {
@@ -80,12 +79,11 @@ async fn toggle_timer(
         .get("x-timer-tag")
         .ok_or(anyhow::anyhow!("Timer tag header was not found"))?;
     let mut hasher = DefaultHasher::new();
-    user_agent.as_str().hash(&mut hasher);
     timer_tag.hash(&mut hasher);
     let uid = hasher.finish();
 
     info!(uid, message = "Toggelling timer");
-    let id = app.timer_store.create_timer(uid.try_into()?).await?;
+    let id = app.timer_store.toggle_current(uid.try_into()?).await?;
 
     debug!(id, message = "Created timer");
 
@@ -101,6 +99,7 @@ struct AppError(anyhow::Error);
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        error!(error = %self.0, "backtrace: {}", self.0.backtrace());
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Something went wrong: {}", self.0),
@@ -116,6 +115,7 @@ where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
-        Self(err.into())
+        let into = err.into();
+        Self(into)
     }
 }
