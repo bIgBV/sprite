@@ -26,14 +26,14 @@ pub struct Timer {
     unique_id: String,
 
     /// When the timer was started
-    start_time: i64,
+    pub start_time: i64,
 
     /// If this is the current timer associated with the [Timer::unique_id]
-    is_current: bool,
+    pub is_current: bool,
 
     /// The duration for which this timer lasted.
     #[sqlx(default)]
-    duration: Option<i64>,
+    pub duration: Option<i64>,
 }
 
 impl TimerStore {
@@ -71,6 +71,7 @@ impl TimerStore {
         }
     }
 
+    #[cfg(test)]
     async fn get_timer(&self, timer_id: i64) -> Result<Timer> {
         Ok(sqlx::query_as::<sqlx::sqlite::Sqlite, Timer>(
             r#"
@@ -80,6 +81,20 @@ WHERE id = ?1"#,
         .bind(timer_id)
         .fetch_one(&self.pool)
         .await?)
+    }
+
+    pub async fn get_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
+        let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
+            r#"
+SELECT * FROM TIMERS
+WHERE unique_id = ?1
+            "#,
+        )
+        .bind(timer_tag.as_ref())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(result)
     }
 
     async fn create_timer(&self, uid: &TagId) -> Result<i64> {
@@ -202,5 +217,21 @@ mod tests {
 
         let timer_id = store.toggle_current(&uid).await.unwrap();
         assert_eq!(timer_id, 2);
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn get_tiemrs_returns_timers_by_tag_id() {
+        let store = setup().await.unwrap();
+        let uid = TagId::new("test-tag").unwrap();
+
+        for _ in 0..20 {
+            store.toggle_current(&uid).await.unwrap();
+            store.toggle_current(&uid).await.unwrap();
+        }
+
+        let timers = store.get_timers_by_tag(&uid).await.unwrap();
+
+        assert_eq!(timers.len(), 20);
     }
 }

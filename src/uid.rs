@@ -9,6 +9,12 @@ use std::{
 #[derive(Debug, Clone, Serialize)]
 pub struct TagId(String);
 
+impl From<String> for TagId {
+    fn from(value: String) -> Self {
+        TagId(value)
+    }
+}
+
 impl AsRef<str> for TagId {
     fn as_ref(&self) -> &str {
         &self.0

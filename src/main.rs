@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use axum::{
     debug_handler,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -20,6 +20,8 @@ use tower::ServiceBuilder;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
+
+use crate::templates::Page;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -39,7 +41,7 @@ async fn main() -> Result<()> {
     // build our application with a route
     let app = Router::new()
         // `GET /` goes to `root`
-        .route("/timer/:timer_tag", get(root))
+        .route("/timer/:timer_tag", get(timers))
         .route("/timer/toggle", get(toggle_timer))
         .nest_service("/assets", ServeDir::new("assets"))
         .with_state(state)
@@ -62,10 +64,19 @@ pub struct App {
 }
 
 // basic handler that responds with a static string
-#[instrument]
+#[instrument(skip(app))]
 #[debug_handler]
-async fn root() -> impl IntoResponse {
-    Html(templates::render_template(&vec![]).unwrap())
+async fn timers(
+    State(app): State<App>,
+    Path(timer_tag): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    debug!(timer_tag, "Rendering timers");
+    let tag = timer_tag.into();
+    let timers = app.timer_store.get_timers_by_tag(&tag).await?;
+
+    Ok(Html(templates::render_timers(Page::new(
+        tag.as_ref().to_string(), timers,
+    ))?))
 }
 
 #[derive(Debug, Serialize)]
@@ -92,8 +103,8 @@ async fn toggle_timer(
     debug!(id, message = "Toggled timer");
 
     Ok(Json(UserContent {
-        uid,
-        url: "https://url-here".to_string(),
+        uid: uid.clone(),
+        url: format!("http://192.168.1.12:3000/timer/{}", uid.as_ref()),
     }))
 }
 
