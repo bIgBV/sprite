@@ -9,9 +9,17 @@
 
 <body>
     {% for timer in page.timers %}
+    {% if timer.is_current %}
+    <div class="current">
+        <h3>Current timer</h3>
+        <div> {{ timer.start_time }}</div>
+    </div>
+    {% else %}
     <div class="timer">
         <div class="start">{{ timer.start_time }}</div>
+        <div class="duration">{{ timer.duration }}</div>
     </div>
+    {% endif %}
     {% endfor %}
 </body>
 
