@@ -5,5 +5,6 @@ pub fn load_env() -> Result<()> {
         dotenvy::dotenv()?;
     }
 
+    // TODO load environment variables for prod environment
     Ok(())
 }

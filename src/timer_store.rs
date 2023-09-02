@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use serde::Serialize;
 use sqlx::SqlitePool;
 use tracing::{debug, error, instrument};
 
@@ -15,7 +16,7 @@ pub struct TimerStore {
 }
 
 /// A Timer object
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Default, Serialize)]
 #[sqlx(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Timer {
     /// The ID of this timer
@@ -175,5 +176,31 @@ mod tests {
 
         assert!(timer_duration >= 2);
         assert!(!timer.is_current)
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn toggle_timer_creates_new_current_timer() {
+        let uid = TagId::new("test-tag").unwrap();
+        let store = setup().await.unwrap();
+        let result = store.toggle_current(&uid).await.unwrap();
+        assert_eq!(result, 1);
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let result = store.toggle_current(&uid).await.unwrap();
+        assert_eq!(result, 1);
+
+        let timer = store.get_timer(result).await.unwrap();
+
+        let Some(timer_duration) = timer.duration else {
+            panic!("Timer hasn't been turned off");
+        };
+
+        assert!(timer_duration >= 2);
+        assert!(!timer.is_current);
+
+        let timer_id = store.toggle_current(&uid).await.unwrap();
+        assert_eq!(timer_id, 2);
     }
 }

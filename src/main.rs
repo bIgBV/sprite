@@ -1,4 +1,5 @@
 mod load_env;
+mod templates;
 mod timer_store;
 mod uid;
 
@@ -9,14 +10,14 @@ use axum::{
     debug_handler,
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use serde::Serialize;
 use timer_store::TimerStore;
 use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
+use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
 
@@ -27,15 +28,20 @@ async fn main() -> Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
+    // Load environment variables
     load_env::load_env()?;
+
+    // Initialize templates
+    templates::init_templates();
 
     let timer_store = TimerStore::new().await?;
     let state = App { timer_store };
     // build our application with a route
     let app = Router::new()
         // `GET /` goes to `root`
-        .route("/", get(root))
+        .route("/timer/:timer_tag", get(root))
         .route("/timer/toggle", get(toggle_timer))
+        .nest_service("/assets", ServeDir::new("assets"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
@@ -56,8 +62,10 @@ pub struct App {
 }
 
 // basic handler that responds with a static string
-async fn root() -> &'static str {
-    "Hello, World!"
+#[instrument]
+#[debug_handler]
+async fn root() -> impl IntoResponse {
+    Html(templates::render_template(&vec![]).unwrap())
 }
 
 #[derive(Debug, Serialize)]
