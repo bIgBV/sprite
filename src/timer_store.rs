@@ -40,6 +40,10 @@ impl TimerStore {
         Ok(TimerStore { pool })
     }
 
+    async fn new_test(pool: SqlitePool) -> Result<Self> {
+        Ok(TimerStore { pool })
+    }
+
     /// Toggles the current timer for the given UID
     #[instrument(skip(self))]
     pub async fn toggle_current(&self, uid: i64) -> Result<i64> {
@@ -104,5 +108,33 @@ WHERE unique_id = ?1 AND is_current"#,
         .fetch_one(&self.pool)
         .await
         .ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use sqlx::sqlite::SqliteConnectOptions;
+    use tracing_test::traced_test;
+
+    async fn setup() -> Result<TimerStore> {
+        let options = SqliteConnectOptions::from_str("sqlite::memory:")?;
+        let pool = SqlitePool::connect_with(options).await?;
+
+        sqlx::migrate!().run(&pool).await?;
+        let store = TimerStore::new_test(pool).await?;
+        Ok(store)
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn toggle_create_when_not_exist() {
+        let store = setup().await.unwrap();
+        let result = store.toggle_current(1).await.unwrap();
+
+        assert_eq!(result, 1);
     }
 }
