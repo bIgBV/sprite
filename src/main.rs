@@ -3,25 +3,30 @@ mod templates;
 mod timer_store;
 mod uid;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, str::FromStr};
 
 use anyhow::Result;
 use axum::{
+    body::{Bytes, Full},
     debug_handler,
     extract::{Path, State},
-    http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    http::{header, StatusCode},
+    response::{AppendHeaders, Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use csv::WriterBuilder;
 use serde::{Deserialize, Serialize};
 use timer_store::TimerStore;
+
 use tower::ServiceBuilder;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
 
 use crate::templates::Page;
+
+const LOCAL_URI_BASE: &'static str = "0.0.0.0:3000";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,12 +48,13 @@ async fn main() -> Result<()> {
         // `GET /` goes to `root`
         .route("/timer/:timer_tag", get(timers))
         .route("/timer/toggle", post(toggle_timer))
+        .route("/export/:tag", get(export))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
     // run our app with hyper, listening globally on port 3000
-    let listener = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let listener = SocketAddr::from_str(LOCAL_URI_BASE)?;
     tracing::info!("listening on {}", listener);
     axum::Server::bind(&listener)
         .serve(app.into_make_service())
@@ -63,7 +69,29 @@ pub struct App {
     timer_store: TimerStore,
 }
 
-// basic handler that responds with a static string
+#[debug_handler]
+async fn export(
+    State(app): State<App>,
+    Path(tag): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let tag = tag.split(".").collect::<Vec<&str>>()[0].to_string().into();
+    let timers = app.timer_store.get_timers_by_tag(&tag).await?;
+
+    let data = vec![];
+
+    let mut writer = WriterBuilder::new().from_writer(data);
+    for timer in timers {
+        writer.serialize(timer)?;
+    }
+    writer.flush()?;
+    let body = Full::new(Bytes::from(writer.into_inner()?));
+
+    let headers = AppendHeaders([(header::CONTENT_TYPE, "text/csv")]);
+
+    Ok((headers, body))
+}
+
+// Renders the main timer page for a given tag
 #[instrument(skip(app))]
 #[debug_handler]
 async fn timers(
@@ -74,9 +102,14 @@ async fn timers(
     let tag = timer_tag.into();
     let timers = app.timer_store.get_timers_by_tag(&tag).await?;
 
+    let file_name = format!("{}.csv", tag.as_ref());
+    let link = format!("http://{}/export/{}", LOCAL_URI_BASE, file_name);
+
     Ok(Html(templates::render_timers(Page::new(
         tag.as_ref().to_string(),
         timers,
+        link,
+        file_name,
     )?)?))
 }
 

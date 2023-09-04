@@ -29,10 +29,17 @@ pub fn init_templates() {
 pub struct Page {
     tag_name: String,
     timers: Vec<Timer>,
+    download_link: String,
+    download_file_name: String,
 }
 
 impl Page {
-    pub fn new(tag_name: String, timers: Vec<Timer>) -> Result<Self> {
+    pub fn new(
+        tag_name: String,
+        timers: Vec<Timer>,
+        download_link: String,
+        download_file_name: String,
+    ) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> = timers
             .into_iter()
             .map(|mut timer| {
@@ -49,7 +56,12 @@ impl Page {
             .collect();
         let timers = timers?;
 
-        Ok(Self { tag_name, timers })
+        Ok(Self {
+            tag_name,
+            timers,
+            download_link,
+            download_file_name,
+        })
     }
 }
 
