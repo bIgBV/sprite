@@ -11,10 +11,10 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use timer_store::TimerStore;
 use tower::ServiceBuilder;
 use tower_http::{services::ServeDir, trace::TraceLayer};
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         // `GET /` goes to `root`
         .route("/timer/:timer_tag", get(timers))
-        .route("/timer/toggle", get(toggle_timer))
+        .route("/timer/toggle", post(toggle_timer))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
@@ -77,7 +77,7 @@ async fn timers(
     Ok(Html(templates::render_timers(Page::new(
         tag.as_ref().to_string(),
         timers,
-    ))?))
+    )?)?))
 }
 
 #[derive(Debug, Serialize)]
@@ -86,18 +86,25 @@ struct UserContent {
     url: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct Toggle {
+    #[serde(rename = "device-time")]
+    pub device_time: String,
+
+    #[serde(rename = "timer-tag")]
+    pub timer_tag: String,
+}
+
 #[instrument(skip_all)]
 #[debug_handler]
 async fn toggle_timer(
     State(app): State<App>,
-    headers: HeaderMap,
+    Json(toggle): Json<Toggle>,
 ) -> Result<Json<UserContent>, AppError> {
-    let timer_tag = headers
-        .get("x-timer-tag")
-        .ok_or(anyhow::anyhow!("Timer tag header was not found"))?;
-    info!(tag = ?timer_tag, "Toggle timer");
+    let timer_tag = &toggle.timer_tag;
+    info!(tag = ?toggle, "Toggle timer");
 
-    let uid = uid::TagId::new(timer_tag.to_str()?)?;
+    let uid = uid::TagId::new(timer_tag)?;
 
     let id = app.timer_store.toggle_current(&uid).await?;
 

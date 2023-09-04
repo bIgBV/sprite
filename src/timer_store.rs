@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use tracing::{debug, error, instrument};
@@ -34,6 +35,9 @@ pub struct Timer {
     /// The duration for which this timer lasted.
     #[sqlx(default)]
     pub duration: Option<i64>,
+
+    #[sqlx(skip)]
+    pub end_time: Option<i64>,
 }
 
 impl TimerStore {

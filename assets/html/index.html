@@ -18,8 +18,8 @@
             <thead>
                 <tr class="">
                     <th scope="col">Start</th>
-                    <th scope="col">Duration</th>
                     <th scope="col">End</th>
+                    <th scope="col">Duration</th>
                 </tr>
             </thead>
             {% for timer in page.timers %}
@@ -32,8 +32,8 @@
             {% else %}
             <tr class="">
                 <td class="start">{{ to_human_date(timestamp=timer.start_time) }}</td>
+                <td class="end">{{ to_human_date(timestamp=timer.end_time) }}</td>
                 <td class="duration">{{ timer.duration }}</td>
-                <td class="end"></td>
             </tr>
             {% endif %}
             {% endfor %}

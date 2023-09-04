@@ -1,6 +1,10 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    sync::OnceLock,
+    time::{Duration, SystemTime},
+};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use chrono::{Local, TimeZone};
 use serde::Serialize;
 use tera::{from_value, to_value, Context, Function, Tera, Value};
@@ -31,8 +35,20 @@ pub struct Page {
 }
 
 impl Page {
-    pub fn new(tag_name: String, timers: Vec<Timer>) -> Self {
-        Self { tag_name, timers }
+    pub fn new(tag_name: String, timers: Vec<Timer>) -> Result<Self> {
+        let timers: Result<Vec<Timer>, Error> = timers
+            .into_iter()
+            .map(|mut timer| {
+                let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+                let start = Duration::from_secs(timer.start_time.try_into()?);
+                timer.end_time = Some((now - start).as_secs().try_into()?);
+
+                Ok(timer)
+            })
+            .collect();
+        let timers = timers?;
+
+        Ok(Self { tag_name, timers })
     }
 }
 
