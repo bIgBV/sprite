@@ -36,6 +36,7 @@ pub struct Timer {
     #[sqlx(default)]
     pub duration: Option<i64>,
 
+    /// Timestamp of when the timer was stopped. Calculated as start_time + duration
     #[sqlx(skip)]
     pub end_time: Option<i64>,
 }
@@ -102,12 +103,27 @@ ORDER BY start_time DESC
         Ok(result)
     }
 
+    pub async fn get_exportable_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
+        let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
+            r#"
+SELECT * FROM TIMERS
+WHERE unique_id = ?1 AND IS_CURRENT = 0
+ORDER BY start_time DESC
+            "#,
+        )
+        .bind(timer_tag.as_ref())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
+
     async fn create_timer(&self, uid: &TagId) -> Result<i64> {
         let tag_id = uid.as_ref();
         let id = sqlx::query!(
             r#"
 INSERT INTO TIMERS (UNIQUE_ID, IS_CURRENT)
-VALUES (?1, true)"#,
+VALUES (?1, 1)"#,
             tag_id
         )
         .execute(&self.pool)
@@ -121,7 +137,7 @@ VALUES (?1, true)"#,
         let rows = sqlx::query!(
             r#"
 UPDATE TIMERS
-set is_current = false, duration = ?1
+set is_current = 0, duration = ?1
 where id = ?2
             "#,
             timer.duration,
@@ -138,7 +154,7 @@ where id = ?2
         sqlx::query_as::<sqlx::sqlite::Sqlite, Timer>(
             r#"
 SELECT * FROM TIMERS
-WHERE unique_id = ?1 AND is_current"#,
+WHERE unique_id = ?1 AND is_current = 1"#,
         )
         .bind(uid.as_ref())
         .fetch_one(&self.pool)
@@ -236,6 +252,24 @@ mod tests {
         }
 
         let timers = store.get_timers_by_tag(&uid).await.unwrap();
+
+        assert_eq!(timers.len(), 20);
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn get_exportable_timers_by_tag_returns_only_complete_timers() {
+        let store = setup().await.unwrap();
+        let uid = TagId::new("test-tag").unwrap();
+
+        for _ in 0..20 {
+            store.toggle_current(&uid).await.unwrap();
+            store.toggle_current(&uid).await.unwrap();
+        }
+
+        store.toggle_current(&uid).await.unwrap();
+
+        let timers = store.get_exportable_timers_by_tag(&uid).await.unwrap();
 
         assert_eq!(timers.len(), 20);
     }

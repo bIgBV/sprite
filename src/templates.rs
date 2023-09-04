@@ -92,7 +92,8 @@ fn to_human_date(_timestamp: i64, _timezone: String) -> impl Function {
         move |args: &HashMap<String, Value>| match args.get("timestamp") {
             Some(val) => {
                 let time = from_value::<i64>(val.clone())?;
-                let formatted_time = format_time(time, "%a, %F %H:%M")?;
+                let formatted_time = format_time(time, "%a, %F %H:%M")
+                    .map_err(|err| tera::Error::call_function("to_human_date", err))?;
 
                 Ok(to_value(formatted_time)?)
             }
@@ -104,18 +105,14 @@ fn to_human_date(_timestamp: i64, _timezone: String) -> impl Function {
     )
 }
 
-fn format_time(time: i64, fmt_string: &str) -> std::result::Result<String, tera::Error> {
-    let formatted_time = match Local.timestamp_opt(time, 0) {
-        chrono::LocalResult::None => Err(tera::Error::call_function(
-            "to_human_date",
-            anyhow!("Unable to create DateTime object"),
-        )),
+pub fn format_time(time: i64, fmt_string: &str) -> Result<String> {
+    match Local.timestamp_opt(time, 0) {
+        chrono::LocalResult::None => Err(anyhow!("Unable to create DateTime object")),
         chrono::LocalResult::Single(time) => Ok(format!("{}", time.format(fmt_string))),
         chrono::LocalResult::Ambiguous(_, _) => {
             unreachable!("We shouldn't have ambiguious time")
         }
-    };
-    formatted_time
+    }
 }
 
 /// Extracts the parts of time from a given timetamp

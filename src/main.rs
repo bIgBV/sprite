@@ -69,19 +69,34 @@ pub struct App {
     timer_store: TimerStore,
 }
 
+/// Export all finished timers for a tag as a CSV file
 #[debug_handler]
 async fn export(
     State(app): State<App>,
     Path(tag): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let tag = tag.split(".").collect::<Vec<&str>>()[0].to_string().into();
-    let timers = app.timer_store.get_timers_by_tag(&tag).await?;
+    let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
 
     let data = vec![];
-
     let mut writer = WriterBuilder::new().from_writer(data);
+
+    #[derive(Debug, Serialize)]
+    struct ExportRecord {
+        start_time: String,
+        end_time: String,
+        duration: i64,
+    }
+
     for timer in timers {
-        writer.serialize(timer)?;
+        writer.serialize(ExportRecord {
+            start_time: templates::format_time(timer.start_time, "%F %H:%M")?,
+            end_time: timer
+                .end_time
+                .and_then(|time| templates::format_time(time, "fmt_string").ok())
+                .unwrap_or(String::new()),
+            duration: timer.duration.expect("Non-current timer does not have Duration")
+        })?;
     }
     writer.flush()?;
     let body = Full::new(Bytes::from(writer.into_inner()?));
@@ -128,6 +143,7 @@ struct Toggle {
     pub timer_tag: String,
 }
 
+/// Toggles the current timer for the given tag
 #[instrument(skip_all)]
 #[debug_handler]
 async fn toggle_timer(
