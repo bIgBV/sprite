@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
         // `GET /` goes to `root`
         .route("/timer/:timer_tag", get(timers))
         .route("/timer/toggle", get(toggle_timer))
-        .nest_service("/assets", ServeDir::new("assets"))
+        .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
@@ -75,7 +75,8 @@ async fn timers(
     let timers = app.timer_store.get_timers_by_tag(&tag).await?;
 
     Ok(Html(templates::render_timers(Page::new(
-        tag.as_ref().to_string(), timers,
+        tag.as_ref().to_string(),
+        timers,
     ))?))
 }
 

@@ -88,6 +88,7 @@ WHERE id = ?1"#,
             r#"
 SELECT * FROM TIMERS
 WHERE unique_id = ?1
+ORDER BY start_time DESC
             "#,
         )
         .bind(timer_tag.as_ref())

@@ -5,22 +5,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Timers - {{page["tag_name"]}}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9" crossorigin="anonymous">
 </head>
 
 <body>
-    {% for timer in page.timers %}
-    {% if timer.is_current %}
-    <div class="current">
-        <h3>Current timer</h3>
-        <div> {{ timer.start_time }}</div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-HwwvtgBNo3bZJJLYd8oVXjrBZt8cqVSpeBNS5n7C8IVInixGAoxmnlMuBnhbgrkm"
+        crossorigin="anonymous"></script>
+    <div class="container-fluid w-50 border rounded d-flex align-items-center">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr class="">
+                    <th scope="col">Start</th>
+                    <th scope="col">Duration</th>
+                    <th scope="col">End</th>
+                </tr>
+            </thead>
+            {% for timer in page.timers %}
+            {% if timer.is_current %}
+            <tr class="">
+                <td> {{ to_human_date(timestamp=timer.start_time) }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+            {% else %}
+            <tr class="">
+                <td class="start">{{ to_human_date(timestamp=timer.start_time) }}</td>
+                <td class="duration">{{ timer.duration }}</td>
+                <td class="end"></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </table>
     </div>
-    {% else %}
-    <div class="timer">
-        <div class="start">{{ timer.start_time }}</div>
-        <div class="duration">{{ timer.duration }}</div>
-    </div>
-    {% endif %}
-    {% endfor %}
 </body>
 
 </html>

@@ -24,6 +24,7 @@ serde = { version = "1.0.188", features = ["serde_derive"] }
 dotenvy = "0.15.7"
 tracing-test = "0.2.4"
 tera = "1.19.0"
+chrono = "0.4.28"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
