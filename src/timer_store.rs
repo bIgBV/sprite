@@ -43,11 +43,9 @@ pub struct Timer {
 
 impl Timer {
     pub fn update_end_time(mut self) -> Result<Self> {
-        let start = Duration::from_secs(self.start_time.try_into()?);
         if let Some(duration) = self.duration {
             // Only want to set end_time for a timer which has already been stopped
-            let duration = Duration::from_secs(duration.try_into()?);
-            self.end_time = Some((start + duration).as_secs().try_into()?);
+            self.end_time = Some(self.start_time + duration);
         }
 
         Ok(self)
@@ -285,5 +283,27 @@ mod tests {
         let timers = store.get_exportable_timers_by_tag(&uid).await.unwrap();
 
         assert_eq!(timers.len(), 20);
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn timer_update_end_time_success() {
+        let store = setup().await.unwrap();
+        let uid = TagId::new("test-tag").unwrap();
+
+        // Start and stop a timer after sleeping for 2 seconds
+        store.toggle_current(&uid).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let timer_id = store.toggle_current(&uid).await.unwrap();
+
+        let timer = store.get_timer(timer_id).await.unwrap();
+        let timer = timer.update_end_time().unwrap();
+
+        assert_eq!(
+            timer.end_time,
+            timer
+                .duration
+                .and_then(|duration| Some(timer.start_time + duration))
+        )
     }
 }

@@ -7,6 +7,7 @@
     <title>Timers - {{page["tag_name"]}}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9" crossorigin="anonymous">
+    <link href="/assets/output.css" rel="stylesheet">
 </head>
 
 <body>
@@ -15,12 +16,18 @@
         crossorigin="anonymous"></script>
     <div class="container-md border rounded align-items-center">
         <div class="download row">
-            <div class="col-md-12">
+            <div class="col-md-8">
+                <h1 class="diaplay-3">
+                    Soot Sprite
+                </h1>
+            </div>
+            <div class="col-md-4 text-end">
                 <a href={{ page.download_link }} download={{ page.download_file_name }}>
                     UwU click me!!
                 </a>
             </div>
         </div>
+        <hr>
         <div class="timers row">
             <div class="col-md-12">
                 <table class="table table-striped table-hover">
@@ -37,24 +44,24 @@
                         <tr class="">
                             <td id="currentStartTime"> {{ to_human_date(timestamp=timer.start_time) }}</td>
                             <td></td>
-                            <td>
-                                <span id="currentHours" class="hours"> </span>
+                            <td class="timer-duration mx-auto m-1 p-2">
+                                <span id="currentHours" class="time"></span>
                                 <span class="separator">:</span>
-                                <span id="currentMinutes" class="minutes"> </span>
+                                <span id="currentMinutes" class="time"></span>
                                 <span class="separator">:</span>
-                                <span id="currentSeconds" class="seconds"> </span>
+                                <span id="currentSeconds" class="time"></span>
                             </td>
                         </tr>
                         {% else %}
                         <tr class="">
-                            <td class="start">{{ to_human_date(timestamp=timer.start_time) }}</td>
-                            <td class="end">{{ to_human_date(timestamp=timer.end_time) }}</td>
-                            <td id="timer-duration">
-                                <span class="hours" id="hours">
+                            <td class="start m-1 p-1">{{ to_human_date(timestamp=timer.start_time) }}</td>
+                            <td class="end m-1 p-1">{{ to_human_date(timestamp=timer.end_time) }}</td>
+                            <td id="timer-duration mx-auto m-1 p-2">
+                                <span class="hours" id="time">
                                     {{ extract_timer_values(duration=timer.duration, time_part="hours")}}
                                 </span>
                                 <span class="separator">:</span>
-                                <span class="minutes" id="minutes">
+                                <span class="minutes" id="time">
                                     {{ extract_timer_values(duration=timer.duration, time_part="minutes")}}
                                 </span>
                             </td>
