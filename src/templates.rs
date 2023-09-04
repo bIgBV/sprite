@@ -40,20 +40,8 @@ impl Page {
         download_link: String,
         download_file_name: String,
     ) -> Result<Self> {
-        let timers: Result<Vec<Timer>, Error> = timers
-            .into_iter()
-            .map(|mut timer| {
-                let start = Duration::from_secs(timer.start_time.try_into()?);
-
-                if let Some(duration) = timer.duration {
-                    // Only want to set end_time for a timer which has already been stopped
-                    let duration = Duration::from_secs(duration.try_into()?);
-                    timer.end_time = Some((start + duration).as_secs().try_into()?);
-                }
-
-                Ok(timer)
-            })
-            .collect();
+        let timers: Result<Vec<Timer>, Error> =
+            timers.into_iter().map(Timer::update_end_time).collect();
         let timers = timers?;
 
         Ok(Self {

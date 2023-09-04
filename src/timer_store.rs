@@ -41,6 +41,19 @@ pub struct Timer {
     pub end_time: Option<i64>,
 }
 
+impl Timer {
+    pub fn update_end_time(mut self) -> Result<Self> {
+        let start = Duration::from_secs(self.start_time.try_into()?);
+        if let Some(duration) = self.duration {
+            // Only want to set end_time for a timer which has already been stopped
+            let duration = Duration::from_secs(duration.try_into()?);
+            self.end_time = Some((start + duration).as_secs().try_into()?);
+        }
+
+        Ok(self)
+    }
+}
+
 impl TimerStore {
     pub async fn new() -> Result<Self> {
         let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;

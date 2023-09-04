@@ -89,14 +89,18 @@ async fn export(
     }
 
     for timer in timers {
-        writer.serialize(ExportRecord {
+        let timer = timer.update_end_time()?;
+        let export_timer = ExportRecord {
             start_time: templates::format_time(timer.start_time, "%F %H:%M")?,
             end_time: timer
                 .end_time
-                .and_then(|time| templates::format_time(time, "fmt_string").ok())
+                .and_then(|time| templates::format_time(time, "%F %H:%M").ok())
                 .unwrap_or(String::new()),
-            duration: timer.duration.expect("Non-current timer does not have Duration")
-        })?;
+            duration: timer
+                .duration
+                .expect("Non-current timer does not have Duration"),
+        };
+        writer.serialize(export_timer)?;
     }
     writer.flush()?;
     let body = Full::new(Bytes::from(writer.into_inner()?));
