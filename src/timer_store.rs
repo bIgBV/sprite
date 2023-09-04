@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
-use chrono::{DateTime, FixedOffset};
+
 use serde::Serialize;
 use sqlx::SqlitePool;
 use tracing::{debug, error, instrument};

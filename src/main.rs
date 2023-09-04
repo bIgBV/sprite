@@ -9,7 +9,7 @@ use anyhow::Result;
 use axum::{
     debug_handler,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
