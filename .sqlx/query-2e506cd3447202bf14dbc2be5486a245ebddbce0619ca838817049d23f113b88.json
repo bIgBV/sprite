@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE TIMERS\nset is_current = 0, duration = ?1\nwhere id = ?2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "2e506cd3447202bf14dbc2be5486a245ebddbce0619ca838817049d23f113b88"
+}
