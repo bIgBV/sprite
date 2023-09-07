@@ -18,6 +18,7 @@ WORKDIR /app
 
 # Get compiled binaries from builder's cargo install directory
 COPY --from=builder /usr/src/app/sprite /app/sprite
+COPY /assets/ /app/assets/
 COPY --from=builder /usr/local/cargo/bin/sqlx /app/sqlx
 
 ENV DATABASE_URL="sqlite://data/sprite.db"
