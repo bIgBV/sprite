@@ -55,6 +55,7 @@ impl Timer {
 impl TimerStore {
     pub async fn new() -> Result<Self> {
         let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;
+        sqlx::migrate!().run(&pool).await?;
         Ok(TimerStore { pool })
     }
 

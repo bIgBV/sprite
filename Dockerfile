@@ -4,9 +4,7 @@ WORKDIR /usr/src/app
 RUN rustup target add x86_64-unknown-linux-musl
 COPY . .
 
-# Will build and cache the binary and dependent crates in release mode
-# RUN --mount=type=cache,target=/usr/local/cargo,from=rust:latest,source=/usr/local/cargo \
-#     --mount=type=cache,target=target \
+RUN cargo install sqlx-cli
 RUN cargo zigbuild --target x86_64-unknown-linux-musl --release && mv ./target/x86_64-unknown-linux-musl/release/sprite ./sprite
 
 # Runtime image
@@ -20,7 +18,11 @@ WORKDIR /app
 
 # Get compiled binaries from builder's cargo install directory
 COPY --from=builder /usr/src/app/sprite /app/sprite
+COPY --from=builder /usr/local/cargo/bin/sqlx /app/sqlx
 
 ENV DATABASE_URL="sqlite://data/sprite.db"
+RUN mkdir -p /app/data && touch /app/data/sprite.db
+RUN /app/sqlx db create
+
 # Run the app
-CMD ./sprite
+CMD /app/sprite
