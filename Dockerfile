@@ -11,19 +11,20 @@ RUN cargo zigbuild --target x86_64-unknown-linux-musl --release && mv ./target/x
 FROM debian:bullseye-slim
 
 # Run as "app" user
-RUN useradd -ms /bin/bash app
+# RUN useradd -ms /bin/bash app
+# RUN usermod -aG sudo app
 
-USER app
+# USER app
 WORKDIR /app
 
 # Get compiled binaries from builder's cargo install directory
 COPY --from=builder /usr/src/app/sprite /app/sprite
+COPY --from=builder /usr/src/app/entrypoint.sh /app/
 COPY /assets/ /app/assets/
 COPY --from=builder /usr/local/cargo/bin/sqlx /app/sqlx
 
-ENV DATABASE_URL="sqlite://data/sprite.db"
-RUN mkdir -p /app/data && touch /app/data/sprite.db
-RUN /app/sqlx db create
+ENV DATABASE_URL="sqlite:///data/sprite.db"
+RUN chmod +x /app/entrypoint.sh
 
 # Run the app
-CMD /app/sprite
+CMD ["/app/entrypoint.sh"]
