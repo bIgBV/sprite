@@ -6,7 +6,7 @@ use serde::Serialize;
 use tera::{from_value, to_value, Context, Function, Tera, Value};
 use tracing::{debug, error, instrument, trace};
 
-use crate::timer_store::Timer;
+use crate::{timer_store::Timer, uid::TagId, uri_base};
 
 pub static TEMPLATES: OnceLock<Tera> = OnceLock::new();
 
@@ -33,6 +33,7 @@ pub struct Page {
     download_link: String,
     download_file_name: String,
     timezones: Vec<String>,
+    uri_base: String,
 }
 
 impl Page {
@@ -41,36 +42,45 @@ impl Page {
         timers: Vec<Timer>,
         download_link: String,
         download_file_name: String,
-        timezone: Option<chrono_tz::Tz>,
+        timezone: chrono_tz::Tz,
     ) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> =
             timers.into_iter().map(Timer::update_end_time).collect();
         let timers = timers?;
-
-        let timezone = timezone
-            .or_else(|| Some(chrono_tz::US::Pacific))
-            .expect("The universe hates me");
 
         Ok(Self {
             tag_name,
             timers,
             download_link,
             download_file_name,
-            timezone: format!("{}", timezone),
+            timezone: format!("{}", to_render_timezone(timezone)),
             timezones: vec![
-                format!("{}", chrono_tz::US::Mountain),
-                format!("{}", chrono_tz::US::Central),
-                format!("{}", chrono_tz::US::Eastern),
+                format!("{}", to_render_timezone(chrono_tz::US::Mountain)),
+                format!("{}", to_render_timezone(chrono_tz::US::Central)),
+                format!("{}", to_render_timezone(chrono_tz::US::Eastern)),
             ],
+            uri_base: uri_base(),
         })
     }
 }
 
-#[instrument]
-pub fn render_timers(page: Page) -> Result<String> {
+#[instrument(skip(timers))]
+pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -> Result<String> {
+    let file_name = format!("{}.csv", tag.as_ref());
+
+    let timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
+        from_render_timezone(timezone)?
+    } else {
+        chrono_tz::US::Pacific
+    };
+
+    let link = format!("{}/export/{}/{}", uri_base(), file_name, timezone);
     let Some(tera) = TEMPLATES.get() else {
         return Err(anyhow::anyhow!("Unable to render index template"));
     };
+    let file_name = format!("{}.csv", tag.to_string());
+
+    let page = Page::new(tag.to_string(), timers, link, file_name, timezone)?;
 
     debug!(
         "Rendering {} timers for {} tag",
@@ -85,6 +95,19 @@ pub fn render_timers(page: Page) -> Result<String> {
         error!(%err, ?err.kind);
         err
     })?)
+}
+
+/// Convert US/<Zone> -> US-Zone to ensure a subroute isn't created
+fn to_render_timezone(timezone: chrono_tz::Tz) -> String {
+    let zone = format!("{}", timezone);
+    zone.replace("/", "-")
+}
+
+/// Convert rendered US-Zone -> US/Zone
+fn from_render_timezone(timezone: String) -> Result<chrono_tz::Tz> {
+    let zone = timezone.replace("-", "/");
+    zone.parse()
+        .map_err(|err| anyhow!("Unable to parse timezone: {}", err))
 }
 
 fn to_human_date() -> impl Function {
@@ -103,7 +126,10 @@ fn to_human_date() -> impl Function {
             ));
         };
         let time = from_value::<i64>(timestamp.clone())?;
-        let timezone: chrono_tz::Tz = from_value::<String>(timezone.clone())?.parse()?;
+        let rendered_timezone = from_value::<String>(timezone.clone())?;
+        let timezone: chrono_tz::Tz = from_render_timezone(rendered_timezone).map_err(|_| {
+            tera::Error::call_function("to_human_date", anyhow!("Unable to convert timezone"))
+        })?;
         let formatted_time = format_time(time, timezone, "%a, %F %H:%M")
             .map_err(|err| tera::Error::call_function("to_human_date", err))?;
 
@@ -111,6 +137,7 @@ fn to_human_date() -> impl Function {
     })
 }
 
+#[instrument]
 pub fn format_time(time: i64, timezone: chrono_tz::Tz, fmt_string: &str) -> Result<String> {
     match timezone.timestamp_opt(time, 0) {
         chrono::LocalResult::None => Err(anyhow!("Unable to create DateTime object")),

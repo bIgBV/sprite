@@ -3,7 +3,7 @@ mod templates;
 mod timer_store;
 mod uid;
 
-use std::{net::SocketAddr, str::FromStr};
+use std::{env, net::SocketAddr, str::FromStr};
 
 use anyhow::{anyhow, Result};
 use axum::{
@@ -24,9 +24,13 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
 
-use crate::templates::Page;
+pub fn uri_base() -> String {
+    let Ok(uri_base) = env::var("URI_BASE") else {
+        panic!("URI_BASE not set")
+    };
 
-const LOCAL_URI_BASE: &'static str = "0.0.0.0:3000";
+    uri_base
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -55,7 +59,7 @@ async fn main() -> Result<()> {
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
     // run our app with hyper, listening globally on port 3000
-    let listener = SocketAddr::from_str(LOCAL_URI_BASE)?;
+    let listener = SocketAddr::from_str("0.0.0.0:3000")?;
     tracing::info!("listening on {}", listener);
     axum::Server::bind(&listener)
         .serve(app.into_make_service())
@@ -77,7 +81,9 @@ async fn export(
     Path((filename, timezone)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     // Remove the file extension
-    let tag = filename.split(".").collect::<Vec<&str>>()[0].to_string().into();
+    let tag = filename.split(".").collect::<Vec<&str>>()[0]
+        .to_string()
+        .into();
     let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
 
     let data = vec![];
@@ -145,23 +151,9 @@ async fn render_timers(
     let tag = timer_tag.into();
     let timers = app.timer_store.get_timers_by_tag(&tag).await?;
 
-    let file_name = format!("{}.csv", tag.as_ref());
-    let link = format!("http://{}/export/{}", LOCAL_URI_BASE, file_name);
-
-    let timezone = if let Some(timezone) = timezone {
-        timezone.parse()
-    } else {
-        Ok(chrono_tz::US::Pacific)
-    };
-
-    Ok(Html(templates::render_timers(Page::new(
-        tag.as_ref().to_string(),
-        timers,
-        link,
-        file_name,
-        timezone.ok(),
-    )?)?))
+    Ok(Html(templates::render_timers(tag, timezone, timers)?))
 }
+
 #[derive(Debug, Serialize)]
 struct UserContent {
     uid: TagId,
@@ -195,7 +187,7 @@ async fn toggle_timer(
 
     Ok(Json(UserContent {
         uid: uid.clone(),
-        url: format!("http://192.168.1.12:3000/timer/{}", uid.as_ref()),
+        url: format!("{}/timer/{}", uri_base(), uid.as_ref()),
     }))
 }
 
