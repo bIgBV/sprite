@@ -26,6 +26,7 @@ tera = "1.19.0"
 chrono = { version = "0.4.28", features = ["serde"] }
 csv = "1.2.2"
 tokio-stream = "0.1.14"
+chrono-tz = { version = "0.8.3", features = ["serde"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

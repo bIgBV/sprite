@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::OnceLock, time::Duration};
+use std::{collections::HashMap, sync::OnceLock};
 
 use anyhow::{anyhow, Error, Result};
-use chrono::{Local, TimeZone};
+use chrono::TimeZone;
 use serde::Serialize;
 use tera::{from_value, to_value, Context, Function, Tera, Value};
 use tracing::{debug, error, instrument, trace};
@@ -14,7 +14,7 @@ pub fn init_templates() {
     TEMPLATES.get_or_init(|| match Tera::new("assets/html/**/*.html") {
         Ok(mut t) => {
             trace!(?t.templates, "loaded templates");
-            t.register_function("to_human_date", to_human_date(0, "timezone".to_string()));
+            t.register_function("to_human_date", to_human_date());
             t.register_function("extract_timer_values", extract_timer_values());
             t
         }
@@ -27,10 +27,12 @@ pub fn init_templates() {
 
 #[derive(Debug, Serialize)]
 pub struct Page {
+    timezone: String,
     tag_name: String,
     timers: Vec<Timer>,
     download_link: String,
     download_file_name: String,
+    timezones: Vec<String>,
 }
 
 impl Page {
@@ -39,21 +41,32 @@ impl Page {
         timers: Vec<Timer>,
         download_link: String,
         download_file_name: String,
+        timezone: Option<chrono_tz::Tz>,
     ) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> =
             timers.into_iter().map(Timer::update_end_time).collect();
         let timers = timers?;
+
+        let timezone = timezone
+            .or_else(|| Some(chrono_tz::US::Pacific))
+            .expect("The universe hates me");
 
         Ok(Self {
             tag_name,
             timers,
             download_link,
             download_file_name,
+            timezone: format!("{}", timezone),
+            timezones: vec![
+                format!("{}", chrono_tz::US::Mountain),
+                format!("{}", chrono_tz::US::Central),
+                format!("{}", chrono_tz::US::Eastern),
+            ],
         })
     }
 }
 
-#[instrument(skip_all)]
+#[instrument]
 pub fn render_timers(page: Page) -> Result<String> {
     let Some(tera) = TEMPLATES.get() else {
         return Err(anyhow::anyhow!("Unable to render index template"));
@@ -74,27 +87,32 @@ pub fn render_timers(page: Page) -> Result<String> {
     })?)
 }
 
-// TODO: Register this method with tera specifying the timezone local timezone
-fn to_human_date(_timestamp: i64, _timezone: String) -> impl Function {
-    Box::new(
-        move |args: &HashMap<String, Value>| match args.get("timestamp") {
-            Some(val) => {
-                let time = from_value::<i64>(val.clone())?;
-                let formatted_time = format_time(time, "%a, %F %H:%M")
-                    .map_err(|err| tera::Error::call_function("to_human_date", err))?;
-
-                Ok(to_value(formatted_time)?)
-            }
-            None => Err(tera::Error::call_function(
+fn to_human_date() -> impl Function {
+    Box::new(move |args: &HashMap<String, Value>| {
+        let Some(timestamp) = args.get("timestamp") else {
+            return Err(tera::Error::call_function(
                 "to_human_date",
                 anyhow!("timestamp argument not found"),
-            )),
-        },
-    )
+            ));
+        };
+
+        let Some(timezone) = args.get("timezone") else {
+            return Err(tera::Error::call_function(
+                "to_human_date",
+                anyhow!("timezone argument not found"),
+            ));
+        };
+        let time = from_value::<i64>(timestamp.clone())?;
+        let timezone: chrono_tz::Tz = from_value::<String>(timezone.clone())?.parse()?;
+        let formatted_time = format_time(time, timezone, "%a, %F %H:%M")
+            .map_err(|err| tera::Error::call_function("to_human_date", err))?;
+
+        Ok(to_value(formatted_time)?)
+    })
 }
 
-pub fn format_time(time: i64, fmt_string: &str) -> Result<String> {
-    match Local.timestamp_opt(time, 0) {
+pub fn format_time(time: i64, timezone: chrono_tz::Tz, fmt_string: &str) -> Result<String> {
+    match timezone.timestamp_opt(time, 0) {
         chrono::LocalResult::None => Err(anyhow!("Unable to create DateTime object")),
         chrono::LocalResult::Single(time) => Ok(format!("{}", time.format(fmt_string))),
         chrono::LocalResult::Ambiguous(_, _) => {

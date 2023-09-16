@@ -130,13 +130,18 @@ ORDER BY start_time DESC
         Ok(result)
     }
 
+    /// Creates a new timer with the start time set to the unix epoch in UTC
     async fn create_timer(&self, uid: &TagId) -> Result<i64> {
         let tag_id = uid.as_ref();
+
+        let start_epoch = chrono::Utc::now().timestamp();
+
         let id = sqlx::query!(
             r#"
-INSERT INTO TIMERS (UNIQUE_ID, IS_CURRENT)
-VALUES (?1, 1)"#,
-            tag_id
+INSERT INTO TIMERS (UNIQUE_ID, IS_CURRENT, START_TIME)
+VALUES (?1, 1, ?2)"#,
+            tag_id,
+            start_epoch
         )
         .execute(&self.pool)
         .await?

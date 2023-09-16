@@ -5,7 +5,7 @@ mod uid;
 
 use std::{net::SocketAddr, str::FromStr};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use axum::{
     body::{Bytes, Full},
     debug_handler,
@@ -47,8 +47,9 @@ async fn main() -> Result<()> {
     let app = Router::new()
         // `GET /` goes to `root`
         .route("/timer/:timer_tag", get(timers))
+        .route("/timer/:timer_tag/:timezone", get(timers_with_tz))
         .route("/timer/toggle", post(toggle_timer))
-        .route("/export/:tag", get(export))
+        .route("/export/:tag/:timezone", get(export))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
@@ -73,9 +74,10 @@ pub struct App {
 #[debug_handler]
 async fn export(
     State(app): State<App>,
-    Path(tag): Path<String>,
+    Path((filename, timezone)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let tag = tag.split(".").collect::<Vec<&str>>()[0].to_string().into();
+    // Remove the file extension
+    let tag = filename.split(".").collect::<Vec<&str>>()[0].to_string().into();
     let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
 
     let data = vec![];
@@ -88,13 +90,17 @@ async fn export(
         duration: i64,
     }
 
+    let timezone: chrono_tz::Tz = timezone
+        .parse()
+        .map_err(|e| anyhow!("Unable to parse timezone: {}", e))?;
+
     for timer in timers {
         let timer = timer.update_end_time()?;
         let export_timer = ExportRecord {
-            start_time: templates::format_time(timer.start_time, "%F %H:%M")?,
+            start_time: templates::format_time(timer.start_time, timezone, "%F %H:%M")?,
             end_time: timer
                 .end_time
-                .and_then(|time| templates::format_time(time, "%F %H:%M").ok())
+                .and_then(|time| templates::format_time(time, timezone, "%F %H:%M").ok())
                 .unwrap_or(String::new()),
             duration: timer
                 .duration
@@ -117,6 +123,24 @@ async fn timers(
     State(app): State<App>,
     Path(timer_tag): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    render_timers(app, timer_tag, None).await
+}
+
+#[instrument(skip(app))]
+#[debug_handler]
+async fn timers_with_tz(
+    State(app): State<App>,
+    Path((timer_tag, timezone)): Path<(String, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    render_timers(app, timer_tag, Some(timezone)).await
+}
+
+#[instrument(skip(app))]
+async fn render_timers(
+    app: App,
+    timer_tag: String,
+    timezone: Option<String>,
+) -> Result<impl IntoResponse, AppError> {
     debug!(timer_tag, "Rendering timers");
     let tag = timer_tag.into();
     let timers = app.timer_store.get_timers_by_tag(&tag).await?;
@@ -124,14 +148,20 @@ async fn timers(
     let file_name = format!("{}.csv", tag.as_ref());
     let link = format!("http://{}/export/{}", LOCAL_URI_BASE, file_name);
 
+    let timezone = if let Some(timezone) = timezone {
+        timezone.parse()
+    } else {
+        Ok(chrono_tz::US::Pacific)
+    };
+
     Ok(Html(templates::render_timers(Page::new(
         tag.as_ref().to_string(),
         timers,
         link,
         file_name,
+        timezone.ok(),
     )?)?))
 }
-
 #[derive(Debug, Serialize)]
 struct UserContent {
     uid: TagId,
