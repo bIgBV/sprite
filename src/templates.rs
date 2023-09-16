@@ -109,13 +109,13 @@ pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -
 }
 
 /// Convert US/<Zone> -> US-Zone to ensure a subroute isn't created
-fn to_render_timezone(timezone: &chrono_tz::Tz) -> String {
+pub fn to_render_timezone(timezone: &chrono_tz::Tz) -> String {
     let zone = format!("{}", timezone);
     zone.replace("/", "-")
 }
 
 /// Convert rendered US-Zone -> US/Zone
-fn from_render_timezone(timezone: String) -> Result<chrono_tz::Tz> {
+pub fn from_render_timezone(timezone: String) -> Result<chrono_tz::Tz> {
     let zone = timezone.replace("-", "/");
     zone.parse()
         .map_err(|err| anyhow!("Unable to parse timezone: {}", err))

@@ -93,12 +93,10 @@ async fn export(
     struct ExportRecord {
         start_time: String,
         end_time: String,
-        duration: i64,
+        duration: f64,
     }
 
-    let timezone: chrono_tz::Tz = timezone
-        .parse()
-        .map_err(|e| anyhow!("Unable to parse timezone: {}", e))?;
+    let timezone: chrono_tz::Tz = templates::from_render_timezone(timezone)?;
 
     for timer in timers {
         let timer = timer.update_end_time()?;
@@ -110,7 +108,8 @@ async fn export(
                 .unwrap_or(String::new()),
             duration: timer
                 .duration
-                .expect("Non-current timer does not have Duration"),
+                .expect("Non-current timer does not have Duration") as f64
+                / 60.0, // convert to minutes
         };
         writer.serialize(export_timer)?;
     }
