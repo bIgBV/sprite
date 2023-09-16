@@ -8,6 +8,12 @@ use tracing::{debug, error, instrument, trace};
 
 use crate::{timer_store::Timer, uid::TagId, uri_base};
 
+pub static DEFAULT_TIMEZONES: [chrono_tz::Tz; 4] = [
+    chrono_tz::US::Pacific,
+    chrono_tz::US::Mountain,
+    chrono_tz::US::Central,
+    chrono_tz::US::Eastern,
+];
 pub static TEMPLATES: OnceLock<Tera> = OnceLock::new();
 
 pub fn init_templates() {
@@ -42,7 +48,7 @@ impl Page {
         timers: Vec<Timer>,
         download_link: String,
         download_file_name: String,
-        timezone: chrono_tz::Tz,
+        current_tz: chrono_tz::Tz,
     ) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> =
             timers.into_iter().map(Timer::update_end_time).collect();
@@ -53,12 +59,12 @@ impl Page {
             timers,
             download_link,
             download_file_name,
-            timezone: format!("{}", to_render_timezone(timezone)),
-            timezones: vec![
-                format!("{}", to_render_timezone(chrono_tz::US::Mountain)),
-                format!("{}", to_render_timezone(chrono_tz::US::Central)),
-                format!("{}", to_render_timezone(chrono_tz::US::Eastern)),
-            ],
+            timezone: format!("{}", to_render_timezone(&current_tz)),
+            timezones: DEFAULT_TIMEZONES
+                .iter()
+                .filter(|tz| **tz != current_tz)
+                .map(|tz| format!("{}", to_render_timezone(tz)))
+                .collect(),
             uri_base: uri_base(),
         })
     }
@@ -74,13 +80,18 @@ pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -
         chrono_tz::US::Pacific
     };
 
-    let link = format!("{}/export/{}/{}", uri_base(), file_name, timezone);
+    let link = format!(
+        "{}/export/{}/{}",
+        uri_base(),
+        file_name,
+        to_render_timezone(&timezone)
+    );
     let Some(tera) = TEMPLATES.get() else {
         return Err(anyhow::anyhow!("Unable to render index template"));
     };
     let file_name = format!("{}.csv", tag.to_string());
 
-    let page = Page::new(tag.to_string(), timers, link, file_name, timezone)?;
+    let page = Page::new(tag.as_ref().to_string(), timers, link, file_name, timezone)?;
 
     debug!(
         "Rendering {} timers for {} tag",
@@ -98,7 +109,7 @@ pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -
 }
 
 /// Convert US/<Zone> -> US-Zone to ensure a subroute isn't created
-fn to_render_timezone(timezone: chrono_tz::Tz) -> String {
+fn to_render_timezone(timezone: &chrono_tz::Tz) -> String {
     let zone = format!("{}", timezone);
     zone.replace("/", "-")
 }
