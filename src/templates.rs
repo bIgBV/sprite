@@ -181,13 +181,81 @@ fn extract_timer_values() -> impl Function {
         let time = from_value::<i64>(time.clone())?;
         let part = from_value::<String>(part.clone())?;
 
-        match part.as_str() {
-            "minutes" => Ok(to_value(if time > 60 { time / 60 } else { 0 })?),
-            "hours" => Ok(to_value(if time > 3600 { time / 3600 } else { 00 })?),
-            _ => Err(tera::Error::call_function(
+        let Ok(part) = extract_timer(part, time) else {
+            return Err(tera::Error::call_function(
                 "extract_timer_value",
                 anyhow!("Unexpected time_part argument"),
-            )),
-        }
+            ));
+        };
+
+        Ok(to_value(part)?)
     })
+}
+
+/// Extracts the minute and hour parts of the duration.
+///
+/// Duration is stored in minute resolution
+fn extract_timer(part: String, time: i64) -> Result<i64> {
+    let minute = 60;
+    let hour = 60 * minute;
+    match part.as_str() {
+        // Round minutes to the nearest minute
+        "minutes" => {
+            // Round down to only the minutes portion
+            let minutes = if time > hour { time % hour } else { time };
+
+            Ok(if minutes > minute {
+                minutes / minute
+            } else {
+                0
+            })
+        }
+        "hours" => Ok(if time > hour { time / hour } else { 0 }),
+        _ => Err(anyhow!("Unexpected timer part argument")),
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn extract_timer_under_hour() {
+        let result = extract_timer("minutes".to_string(), 45);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        let result = extract_timer("minutes".to_string(), 45 * 60);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 45);
+    }
+
+    #[test]
+    fn extract_timer_over_hour() {
+        let time = ((2 * 60) + 35) * 60;
+        let result = extract_timer("minutes".to_string(), time);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 35);
+
+        let result = extract_timer("hours".to_string(), time);
+        assert_eq!(result.unwrap(), 2);
+    }
+
+    #[test]
+    fn extract_timer_long_duration() {
+        let time = 74242;
+
+        let result = extract_timer("minutes".to_string(), time);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 37);
+
+        let result = extract_timer("hours".to_string(), time);
+        assert_eq!(result.unwrap(), 20);
+    }
 }

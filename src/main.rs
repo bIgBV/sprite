@@ -5,7 +5,7 @@ mod uid;
 
 use std::{env, net::SocketAddr, str::FromStr};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use axum::{
     body::{Bytes, Full},
     debug_handler,
@@ -161,15 +161,15 @@ struct UserContent {
 
 #[derive(Debug, Deserialize)]
 struct Toggle {
-    #[serde(rename = "device-time")]
-    pub device_time: String,
+    #[serde(rename = "device-details")]
+    pub device_details: String,
 
     #[serde(rename = "timer-tag")]
     pub timer_tag: String,
 }
 
 /// Toggles the current timer for the given tag
-#[instrument(skip_all)]
+#[instrument(skip(app))]
 #[debug_handler]
 async fn toggle_timer(
     State(app): State<App>,
