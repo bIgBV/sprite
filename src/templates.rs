@@ -32,72 +32,117 @@ pub fn init_templates() {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Page {
-    timezone: String,
+pub struct MainPage {
+    current_timezone: String,
     tag_name: String,
+    timezones: Vec<String>,
+    uri_base: String,
+    projects: Vec<Project>,
+}
+
+/// Data structure for holding information related to a project
+#[derive(Debug, Serialize)]
+struct Project {
+    name: String,
     timers: Vec<Timer>,
     download_link: String,
     download_file_name: String,
-    timezones: Vec<String>,
-    uri_base: String,
 }
 
-impl Page {
-    pub fn new(
-        tag_name: String,
-        timers: Vec<Timer>,
-        download_link: String,
-        download_file_name: String,
-        current_tz: chrono_tz::Tz,
-    ) -> Result<Self> {
+impl MainPage {
+    pub fn new(tag_name: String, timers: Vec<Timer>, timezone: Option<String>) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> =
             timers.into_iter().map(Timer::update_end_time).collect();
         let timers = timers?;
 
+        let timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
+            from_render_timezone(timezone)?
+        } else {
+            chrono_tz::US::Pacific
+        };
+
+        let projects =
+            timers_to_project(timers, timezone.clone()).collect::<Result<Vec<Project>>>()?;
+
+        let timezones = DEFAULT_TIMEZONES
+            .iter()
+            .filter(|tz| **tz != timezone)
+            .map(|tz| format!("{}", to_render_timezone(tz)))
+            .collect();
+
         Ok(Self {
             tag_name,
-            timers,
-            download_link,
-            download_file_name,
-            timezone: format!("{}", to_render_timezone(&current_tz)),
-            timezones: DEFAULT_TIMEZONES
-                .iter()
-                .filter(|tz| **tz != current_tz)
-                .map(|tz| format!("{}", to_render_timezone(tz)))
-                .collect(),
+            current_timezone: format!("{}", to_render_timezone(&timezone)),
+            timezones,
             uri_base: uri_base(),
+            projects,
         })
     }
 }
 
+fn timers_to_project(
+    timers: Vec<Timer>,
+    timezone: chrono_tz::Tz,
+) -> impl Iterator<Item = Result<Project>> {
+    let mut project_map = HashMap::new();
+
+    for timer in timers {
+        project_map
+            .entry(timer.project.clone())
+            .and_modify(|val: &mut Vec<Timer>| val.push(timer))
+            .or_insert(Vec::new());
+    }
+
+    project_map.into_iter().map(move |(key, val)| {
+        if val.len() == 0 {
+            return Ok(Project {
+                name: key,
+                timers: val,
+                download_link: String::new(),
+                download_file_name: String::new(),
+            });
+        }
+
+        let tag = val
+            .iter()
+            .take(1)
+            .map(|t| t.unique_id.as_ref())
+            .next()
+            .expect("There should be at least one timer");
+
+        let (file_name, link) = download_information(&key, &tag, &timezone);
+
+        Ok(Project {
+            name: key,
+            timers: val,
+            download_link: link,
+            download_file_name: file_name,
+        })
+    })
+}
+
+fn download_information(project: &str, tag: &str, timezone: &chrono_tz::Tz) -> (String, String) {
+    let file_name = format!("{}.csv", project);
+    let link = format!(
+        "{}/export/{}/{}/{}",
+        uri_base(),
+        tag,
+        file_name,
+        to_render_timezone(timezone)
+    );
+
+    (file_name, link)
+}
+
 #[instrument(skip(timers))]
 pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -> Result<String> {
-    let file_name = format!("{}.csv", tag.as_ref());
-
-    let timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
-        from_render_timezone(timezone)?
-    } else {
-        chrono_tz::US::Pacific
-    };
-
-    let link = format!(
-        "{}/export/{}/{}",
-        uri_base(),
-        file_name,
-        to_render_timezone(&timezone)
-    );
     let Some(tera) = TEMPLATES.get() else {
         return Err(anyhow::anyhow!("Unable to render index template"));
     };
-    let file_name = format!("{}.csv", tag.to_string());
 
-    let page = Page::new(tag.as_ref().to_string(), timers, link, file_name, timezone)?;
+    let page = MainPage::new(tag.as_ref().to_string(), timers, timezone)?;
 
-    debug!(
-        "Rendering {} timers for {} tag",
-        page.timers.len(),
-        page.tag_name
-    );
+    debug!("Rendering timers for {} tag", page.tag_name);
 
     let mut context = Context::new();
     context.insert("page", &page);

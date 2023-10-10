@@ -24,7 +24,10 @@ pub struct Timer {
     id: i64,
 
     /// The TagId this timer is associated with
-    unique_id: String,
+    pub unique_id: String,
+
+    /// The project this timer is associated with
+    pub project: String,
 
     /// When the timer was started
     pub start_time: i64,

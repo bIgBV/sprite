@@ -1,6 +1,7 @@
 mod load_env;
 mod templates;
 mod timer_store;
+mod timer_utils;
 mod uid;
 
 use std::{env, net::SocketAddr, str::FromStr};
@@ -15,16 +16,14 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use csv::WriterBuilder;
 use serde::{Deserialize, Serialize};
 use timer_store::TimerStore;
 
+use timer_utils::export_timers;
 use tower::ServiceBuilder;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
-
-use crate::templates::extract_timer;
 
 pub fn uri_base() -> String {
     let Ok(uri_base) = env::var("URI_BASE") else {
@@ -88,43 +87,7 @@ async fn export(
         .into();
     let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
 
-    let data = vec![];
-    let mut writer = WriterBuilder::new().from_writer(data);
-
-    #[derive(Debug, Serialize)]
-    struct ExportRecord {
-        start_time: String,
-        end_time: String,
-        duration: String,
-    }
-
-    let timezone: chrono_tz::Tz = templates::from_render_timezone(timezone)?;
-
-    for timer in timers {
-        let timer = timer.update_end_time()?;
-
-        let duration = if timer.duration.is_some() {
-            let duration = timer.duration.expect("We already checked");
-            format!(
-                "{}:{}",
-                extract_timer(templates::TimerPart::Hour, duration)?,
-                extract_timer(templates::TimerPart::Min, duration)?
-            )
-        } else {
-            String::new()
-        };
-
-        let export_timer = ExportRecord {
-            start_time: templates::format_time(timer.start_time, timezone, "%F %H:%M")?,
-            end_time: timer
-                .end_time
-                .and_then(|time| templates::format_time(time, timezone, "%F %H:%M").ok())
-                .unwrap_or(String::new()),
-            duration, // convert to minutes
-        };
-        writer.serialize(export_timer)?;
-    }
-    writer.flush()?;
+    let writer = export_timers(timers, timezone)?;
     let body = Full::new(Bytes::from(writer.into_inner()?));
 
     let headers = AppendHeaders([(header::CONTENT_TYPE, "text/csv")]);

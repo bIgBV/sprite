@@ -54,51 +54,55 @@
         <hr>
 
         <div class="timers row">
-            <div class="col-md-12">
-                <table class="table table-striped table-hover">
-                    <thead>
-                        <tr class="">
-                            <th scope="col">Start</th>
-                            <th scope="col">End</th>
-                            <th scope="col">Duration</th>
-                        </tr>
-                    </thead>
-                    <tbody class="table-group-divider">
-                        {% for timer in page.timers %}
-                        {% if timer.is_current %}
-                        <tr class="">
-                            <td id="currentStartTime">
-                                {{ to_human_date(timestamp=timer.start_time, timezone=page.timezone) }}
-                            </td>
-                            <td></td>
-                            <td class="timer-duration mx-auto m-1 p-2">
-                                <span id="currentHours" class="time"></span>
-                                <span class="separator">:</span>
-                                <span id="currentMinutes" class="time"></span>
-                                <span class="separator">:</span>
-                                <span id="currentSeconds" class="time"></span>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr class="">
-                            <td class="start m-1 p-1">{{ to_human_date(timestamp=timer.start_time,
-                                timezone=page.timezone) }}</td>
-                            <td class="end m-1 p-1">{{ to_human_date(timestamp=timer.end_time, timezone=page.timezone)
-                                }}</td>
-                            <td id="timer-duration mx-auto m-1 p-2">
-                                <span class="hours" id="time">
-                                    {{ extract_timer_values(duration=timer.duration, time_part="hours")}}
-                                </span>
-                                <span class="separator">:</span>
-                                <span class="minutes" id="time">
-                                    {{ extract_timer_values(duration=timer.duration, time_part="minutes")}}
-                                </span>
-                            </td>
-                        </tr>
-                        {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="project">
+                {{ page.project }}
+                <div class="col-md-12">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr class="">
+                                <th scope="col">Start</th>
+                                <th scope="col">End</th>
+                                <th scope="col">Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody class="table-group-divider">
+                            {% for timer in page.timers %}
+                            {% if timer.is_current %}
+                            <tr class="">
+                                <td id="currentStartTime">
+                                    {{ to_human_date(timestamp=timer.start_time, timezone=page.timezone) }}
+                                </td>
+                                <td></td>
+                                <td class="timer-duration mx-auto m-1 p-2">
+                                    <span id="currentHours" class="time"></span>
+                                    <span class="separator">:</span>
+                                    <span id="currentMinutes" class="time"></span>
+                                    <span class="separator">:</span>
+                                    <span id="currentSeconds" class="time"></span>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr class="">
+                                <td class="start m-1 p-1">{{ to_human_date(timestamp=timer.start_time,
+                                    timezone=page.timezone) }}</td>
+                                <td class="end m-1 p-1">{{ to_human_date(timestamp=timer.end_time,
+                                    timezone=page.timezone)
+                                    }}</td>
+                                <td id="timer-duration mx-auto m-1 p-2">
+                                    <span class="hours" id="time">
+                                        {{ extract_timer_values(duration=timer.duration, time_part="hours")}}
+                                    </span>
+                                    <span class="separator">:</span>
+                                    <span class="minutes" id="time">
+                                        {{ extract_timer_values(duration=timer.duration, time_part="minutes")}}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
