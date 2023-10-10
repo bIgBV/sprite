@@ -24,6 +24,8 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::{debug, error, info, instrument};
 use uid::TagId;
 
+use crate::templates::extract_timer;
+
 pub fn uri_base() -> String {
     let Ok(uri_base) = env::var("URI_BASE") else {
         panic!("URI_BASE not set")
@@ -93,23 +95,32 @@ async fn export(
     struct ExportRecord {
         start_time: String,
         end_time: String,
-        duration: f64,
+        duration: String,
     }
 
     let timezone: chrono_tz::Tz = templates::from_render_timezone(timezone)?;
 
     for timer in timers {
         let timer = timer.update_end_time()?;
+
+        let duration = if timer.duration.is_some() {
+            let duration = timer.duration.expect("We already checked");
+            format!(
+                "{}:{}",
+                extract_timer(templates::TimerPart::Hour, duration)?,
+                extract_timer(templates::TimerPart::Min, duration)?
+            )
+        } else {
+            String::new()
+        };
+
         let export_timer = ExportRecord {
             start_time: templates::format_time(timer.start_time, timezone, "%F %H:%M")?,
             end_time: timer
                 .end_time
                 .and_then(|time| templates::format_time(time, timezone, "%F %H:%M").ok())
                 .unwrap_or(String::new()),
-            duration: timer
-                .duration
-                .expect("Non-current timer does not have Duration") as f64
-                / 60.0, // convert to minutes
+            duration, // convert to minutes
         };
         writer.serialize(export_timer)?;
     }
@@ -175,8 +186,8 @@ async fn toggle_timer(
     State(app): State<App>,
     Json(toggle): Json<Toggle>,
 ) -> Result<Json<UserContent>, AppError> {
-    let timer_tag = &toggle.timer_tag;
     info!(tag = ?toggle, "Toggle timer");
+    let timer_tag = &toggle.timer_tag;
 
     let uid = uid::TagId::new(timer_tag)?;
 

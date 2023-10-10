@@ -179,7 +179,11 @@ fn extract_timer_values() -> impl Function {
         };
 
         let time = from_value::<i64>(time.clone())?;
-        let part = from_value::<String>(part.clone())?;
+        let part = match from_value::<String>(part.clone())?.as_str() {
+            "hours" => TimerPart::Hour,
+            "minutes" => TimerPart::Min,
+            _ => panic!("Unexpected argument"),
+        };
 
         let Ok(part) = extract_timer(part, time) else {
             return Err(tera::Error::call_function(
@@ -192,15 +196,20 @@ fn extract_timer_values() -> impl Function {
     })
 }
 
+pub enum TimerPart {
+    Hour,
+    Min,
+}
+
 /// Extracts the minute and hour parts of the duration.
 ///
 /// Duration is stored in minute resolution
-fn extract_timer(part: String, time: i64) -> Result<i64> {
+pub fn extract_timer(part: TimerPart, time: i64) -> Result<i64> {
     let minute = 60;
     let hour = 60 * minute;
-    match part.as_str() {
+    match part {
         // Round minutes to the nearest minute
-        "minutes" => {
+        TimerPart::Min => {
             // Round down to only the minutes portion
             let minutes = if time > hour { time % hour } else { time };
 
@@ -210,8 +219,7 @@ fn extract_timer(part: String, time: i64) -> Result<i64> {
                 0
             })
         }
-        "hours" => Ok(if time > hour { time / hour } else { 0 }),
-        _ => Err(anyhow!("Unexpected timer part argument")),
+        TimerPart::Hour => Ok(if time > hour { time / hour } else { 0 }),
     }
 }
 
@@ -223,12 +231,12 @@ mod test {
 
     #[test]
     fn extract_timer_under_hour() {
-        let result = extract_timer("minutes".to_string(), 45);
+        let result = extract_timer(TimerPart::Min, 45);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
 
-        let result = extract_timer("minutes".to_string(), 45 * 60);
+        let result = extract_timer(TimerPart::Min, 45 * 60);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 45);
@@ -237,12 +245,12 @@ mod test {
     #[test]
     fn extract_timer_over_hour() {
         let time = ((2 * 60) + 35) * 60;
-        let result = extract_timer("minutes".to_string(), time);
+        let result = extract_timer(TimerPart::Min, time);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 35);
 
-        let result = extract_timer("hours".to_string(), time);
+        let result = extract_timer(TimerPart::Hour, time);
         assert_eq!(result.unwrap(), 2);
     }
 
@@ -250,12 +258,12 @@ mod test {
     fn extract_timer_long_duration() {
         let time = 74242;
 
-        let result = extract_timer("minutes".to_string(), time);
+        let result = extract_timer(TimerPart::Min, time);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 37);
 
-        let result = extract_timer("hours".to_string(), time);
+        let result = extract_timer(TimerPart::Hour, time);
         assert_eq!(result.unwrap(), 20);
     }
 }
