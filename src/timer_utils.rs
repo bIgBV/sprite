@@ -7,7 +7,7 @@ use csv::{Writer, WriterBuilder};
 use serde::Serialize;
 
 /// Serializes timers into a CSV writer
-pub fn export_timers(timers: Vec<Timer>, timezone: String) -> Result<Writer<Vec<u8>>> {
+pub(crate) fn export_timers(timers: Vec<Timer>, timezone: &str) -> Result<Writer<Vec<u8>>> {
     let data = vec![];
     let mut writer = WriterBuilder::new().from_writer(data);
 
@@ -18,13 +18,13 @@ pub fn export_timers(timers: Vec<Timer>, timezone: String) -> Result<Writer<Vec<
         duration: String,
     }
 
-    let timezone: chrono_tz::Tz = templates::from_render_timezone(timezone)?;
+    let timezone: chrono_tz::Tz = templates::from_render_timezone(&timezone)?;
 
     for timer in timers {
         let timer = timer.update_end_time()?;
 
-        let duration = if timer.duration.is_some() {
-            let duration = timer.duration.expect("We already checked");
+        let duration = if timer.duration > 0 {
+            let duration = timer.duration;
             format!(
                 "{}:{}",
                 extract_timer(templates::TimerPart::Hour, duration)?,
@@ -36,10 +36,7 @@ pub fn export_timers(timers: Vec<Timer>, timezone: String) -> Result<Writer<Vec<
 
         let export_timer = ExportRecord {
             start_time: templates::format_time(timer.start_time, timezone, "%F %H:%M")?,
-            end_time: timer
-                .end_time
-                .and_then(|time| templates::format_time(time, timezone, "%F %H:%M").ok())
-                .unwrap_or(String::new()),
+            end_time: templates::format_time(timer.end_time, timezone, "%F %H:%M")?,
             duration, // convert to minutes
         };
         writer.serialize(export_timer)?;

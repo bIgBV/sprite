@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![deny(elided_lifetimes_in_paths)]
+
 mod load_env;
 mod templates;
 mod timer_store;
@@ -7,12 +10,13 @@ mod uid;
 use std::{env, net::SocketAddr, str::FromStr};
 
 use anyhow::Result;
+use askama::Template;
 use axum::{
     body::{Bytes, Full},
     debug_handler,
     extract::{Path, State},
-    http::{header, StatusCode},
-    response::{AppendHeaders, Html, IntoResponse, Response},
+    http::{self, header, StatusCode},
+    response::{AppendHeaders, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -42,9 +46,6 @@ async fn main() -> Result<()> {
 
     // Load environment variables
     load_env::load_env()?;
-
-    // Initialize templates
-    templates::init_templates();
 
     let timer_store = TimerStore::new().await?;
     let state = App { timer_store };
@@ -87,7 +88,7 @@ async fn export(
         .into();
     let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
 
-    let writer = export_timers(timers, timezone)?;
+    let writer = export_timers(timers, &timezone)?;
     let body = Full::new(Bytes::from(writer.into_inner()?));
 
     let headers = AppendHeaders([(header::CONTENT_TYPE, "text/csv")]);
@@ -119,12 +120,13 @@ async fn render_timers(
     app: App,
     timer_tag: String,
     timezone: Option<String>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
     debug!(timer_tag, "Rendering timers");
     let tag = timer_tag.into();
     let timers = app.timer_store.get_timers_by_tag(&tag).await?;
 
-    Ok(Html(templates::render_timers(tag, timezone, timers)?))
+    let rendered_page = templates::render_timers(tag, timezone, timers)?;
+    Ok(into_response(&rendered_page))
 }
 
 #[derive(Debug, Serialize)]
@@ -188,5 +190,19 @@ where
     fn from(err: E) -> Self {
         let into = err.into();
         Self(into)
+    }
+}
+
+pub fn into_response<T: Template>(t: &T) -> Response {
+    match t.render() {
+        Ok(body) => {
+            let headers = [(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_static(T::MIME_TYPE),
+            )];
+
+            (headers, body).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

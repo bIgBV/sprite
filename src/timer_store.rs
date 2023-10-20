@@ -12,7 +12,7 @@ use tracing::{debug, error, instrument};
 use crate::uid::TagId;
 
 #[derive(Debug, Clone)]
-pub struct TimerStore {
+pub(crate) struct TimerStore {
     pool: SqlitePool,
 }
 
@@ -24,39 +24,39 @@ pub struct Timer {
     id: i64,
 
     /// The TagId this timer is associated with
-    pub unique_id: String,
+    pub(crate) unique_id: String,
 
     /// The project this timer is associated with
-    pub project: String,
+    pub(crate) project: String,
 
     /// When the timer was started
-    pub start_time: i64,
+    pub(crate) start_time: i64,
 
     /// If this is the current timer associated with the [Timer::unique_id]
-    pub is_current: bool,
+    pub(crate) is_current: bool,
 
     /// The duration for which this timer lasted.
+    ///
+    /// This value is only valid for timers for which `is_current` == false
     #[sqlx(default)]
-    pub duration: Option<i64>,
+    pub(crate) duration: i64,
 
     /// Timestamp of when the timer was stopped. Calculated as start_time + duration
+    ///
+    /// This value is only valid for timers for which `is_current` == false
     #[sqlx(skip)]
-    pub end_time: Option<i64>,
+    pub(crate) end_time: i64,
 }
 
 impl Timer {
-    pub fn update_end_time(mut self) -> Result<Self> {
-        if let Some(duration) = self.duration {
-            // Only want to set end_time for a timer which has already been stopped
-            self.end_time = Some(self.start_time + duration);
-        }
-
+    pub(crate) fn update_end_time(mut self) -> Result<Self> {
+        self.end_time = self.start_time + self.duration;
         Ok(self)
     }
 }
 
 impl TimerStore {
-    pub async fn new() -> Result<Self> {
+    pub(crate) async fn new() -> Result<Self> {
         let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;
         sqlx::migrate!().run(&pool).await?;
         Ok(TimerStore { pool })
@@ -76,7 +76,7 @@ impl TimerStore {
             debug!(?timer, "Ending current timer");
             let timer_duration = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?
                 - Duration::from_secs(timer.start_time.try_into()?);
-            timer.duration = Some(timer_duration.as_secs().try_into()?);
+            timer.duration = timer_duration.as_secs().try_into()?;
 
             if !self.update_timer(timer).await? {
                 error!(?timer_id, "Error updating timer");
@@ -103,7 +103,7 @@ WHERE id = ?1"#,
         .await?)
     }
 
-    pub async fn get_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
+    pub(crate) async fn get_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
         let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
             r#"
 SELECT * FROM TIMERS
@@ -118,7 +118,10 @@ ORDER BY start_time DESC
         Ok(result)
     }
 
-    pub async fn get_exportable_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
+    pub(crate) async fn get_exportable_timers_by_tag(
+        &self,
+        timer_tag: &TagId,
+    ) -> Result<Vec<Timer>> {
         let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
             r#"
 SELECT * FROM TIMERS
@@ -226,11 +229,9 @@ mod tests {
 
         let timer = store.get_timer(result).await.unwrap();
 
-        let Some(timer_duration) = timer.duration else {
-            panic!("Timer hasn't been turned off");
-        };
+        assert!(!timer.is_current, "Timer hasn't been turned off");
 
-        assert!(timer_duration >= 2);
+        assert!(timer.duration >= 2);
         assert!(!timer.is_current)
     }
 
@@ -249,11 +250,9 @@ mod tests {
 
         let timer = store.get_timer(result).await.unwrap();
 
-        let Some(timer_duration) = timer.duration else {
-            panic!("Timer hasn't been turned off");
-        };
+        assert!(!timer.is_current, "Timer hasn't been turned off");
 
-        assert!(timer_duration >= 2);
+        assert!(timer.duration >= 2);
         assert!(!timer.is_current);
 
         let timer_id = store.toggle_current(&uid).await.unwrap();
@@ -308,11 +307,6 @@ mod tests {
         let timer = store.get_timer(timer_id).await.unwrap();
         let timer = timer.update_end_time().unwrap();
 
-        assert_eq!(
-            timer.end_time,
-            timer
-                .duration
-                .and_then(|duration| Some(timer.start_time + duration))
-        )
+        assert_eq!(timer.end_time, timer.duration + timer.start_time)
     }
 }

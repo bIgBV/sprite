@@ -1,37 +1,23 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, Error, Result};
+use askama::Template;
+use askama_axum;
 use chrono::TimeZone;
 use serde::Serialize;
-use tera::{from_value, to_value, Context, Function, Tera, Value};
-use tracing::{debug, error, instrument, trace};
+use tracing::{debug, instrument};
 
 use crate::{timer_store::Timer, uid::TagId, uri_base};
 
-pub static DEFAULT_TIMEZONES: [chrono_tz::Tz; 4] = [
+pub(crate) static DEFAULT_TIMEZONES: [chrono_tz::Tz; 4] = [
     chrono_tz::US::Pacific,
     chrono_tz::US::Mountain,
     chrono_tz::US::Central,
     chrono_tz::US::Eastern,
 ];
-pub static TEMPLATES: OnceLock<Tera> = OnceLock::new();
 
-pub fn init_templates() {
-    TEMPLATES.get_or_init(|| match Tera::new("assets/html/**/*.html") {
-        Ok(mut t) => {
-            trace!(?t.templates, "loaded templates");
-            t.register_function("to_human_date", to_human_date());
-            t.register_function("extract_timer_values", extract_timer_values());
-            t
-        }
-        Err(e) => {
-            println!("Error parsing templates: {}", e);
-            ::std::process::abort();
-        }
-    });
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Template)]
+#[template(path = "index.html")]
 pub struct MainPage {
     current_timezone: String,
     tag_name: String,
@@ -50,13 +36,17 @@ struct Project {
 }
 
 impl MainPage {
-    pub fn new(tag_name: String, timers: Vec<Timer>, timezone: Option<String>) -> Result<Self> {
+    pub(crate) fn new(
+        tag_name: String,
+        timers: Vec<Timer>,
+        timezone: Option<String>,
+    ) -> Result<Self> {
         let timers: Result<Vec<Timer>, Error> =
             timers.into_iter().map(Timer::update_end_time).collect();
         let timers = timers?;
 
         let timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
-            from_render_timezone(timezone)?
+            from_render_timezone(&timezone)?
         } else {
             chrono_tz::US::Pacific
         };
@@ -135,62 +125,69 @@ fn download_information(project: &str, tag: &str, timezone: &chrono_tz::Tz) -> (
 }
 
 #[instrument(skip(timers))]
-pub fn render_timers(tag: TagId, timezone: Option<String>, timers: Vec<Timer>) -> Result<String> {
-    let Some(tera) = TEMPLATES.get() else {
-        return Err(anyhow::anyhow!("Unable to render index template"));
-    };
-
+pub fn render_timers(
+    tag: TagId,
+    timezone: Option<String>,
+    timers: Vec<Timer>,
+) -> anyhow::Result<MainPage> {
     let page = MainPage::new(tag.as_ref().to_string(), timers, timezone)?;
 
     debug!("Rendering timers for {} tag", page.tag_name);
-
-    let mut context = Context::new();
-    context.insert("page", &page);
-
-    Ok(tera.render("index.html", &context).map_err(|err| {
-        error!(%err, ?err.kind);
-        err
-    })?)
+    Ok(page)
 }
 
 /// Convert US/<Zone> -> US-Zone to ensure a subroute isn't created
-pub fn to_render_timezone(timezone: &chrono_tz::Tz) -> String {
+pub(crate) fn to_render_timezone(timezone: &chrono_tz::Tz) -> String {
     let zone = format!("{}", timezone);
     zone.replace("/", "-")
 }
 
 /// Convert rendered US-Zone -> US/Zone
-pub fn from_render_timezone(timezone: String) -> Result<chrono_tz::Tz> {
+pub(crate) fn from_render_timezone(timezone: &str) -> Result<chrono_tz::Tz> {
     let zone = timezone.replace("-", "/");
     zone.parse()
         .map_err(|err| anyhow!("Unable to parse timezone: {}", err))
 }
 
-fn to_human_date() -> impl Function {
-    Box::new(move |args: &HashMap<String, Value>| {
-        let Some(timestamp) = args.get("timestamp") else {
-            return Err(tera::Error::call_function(
-                "to_human_date",
-                anyhow!("timestamp argument not found"),
-            ));
+mod filters {
+    use std::{fmt::Display, num::ParseIntError};
+
+    use super::TimerPart;
+
+    pub fn to_human_date(timestamp: &i64, timezone: &str) -> ::askama::Result<String> {
+        let timezone: chrono_tz::Tz = super::from_render_timezone(timezone)
+            .map_err(|err| askama::Error::Custom(err.into()))?;
+        let formatted_time = super::format_time(*timestamp, timezone, "%a, %F %H:%M")
+            .map_err(|err| askama::Error::Custom(err.into()))?;
+
+        Ok(formatted_time)
+    }
+
+    /// Extracts the parts of time from a given timetamp
+    ///
+    /// Mainly used to get the hours and minutes for a timer.
+    pub fn extract_timer_values<T: Display>(time: T, part: &str) -> ::askama::Result<String> {
+        let time = time
+            .to_string()
+            .parse()
+            .map_err(|err: ParseIntError| askama::Error::Custom(Box::new(err)))?; // Inference trips over itself without type
+        let part = match part {
+            "hours" => TimerPart::Hour,
+            "minutes" => TimerPart::Min,
+            _ => panic!("Unexpected argument"),
         };
 
-        let Some(timezone) = args.get("timezone") else {
-            return Err(tera::Error::call_function(
-                "to_human_date",
-                anyhow!("timezone argument not found"),
-            ));
+        let Ok(part) = super::extract_timer(part, time) else {
+            return Err(askama::Error::Custom("Unable to extract timer part".into()));
         };
-        let time = from_value::<i64>(timestamp.clone())?;
-        let rendered_timezone = from_value::<String>(timezone.clone())?;
-        let timezone: chrono_tz::Tz = from_render_timezone(rendered_timezone).map_err(|_| {
-            tera::Error::call_function("to_human_date", anyhow!("Unable to convert timezone"))
-        })?;
-        let formatted_time = format_time(time, timezone, "%a, %F %H:%M")
-            .map_err(|err| tera::Error::call_function("to_human_date", err))?;
 
-        Ok(to_value(formatted_time)?)
-    })
+        Ok(format!("{}", part))
+    }
+}
+
+pub enum TimerPart {
+    Hour,
+    Min,
 }
 
 #[instrument]
@@ -202,48 +199,6 @@ pub fn format_time(time: i64, timezone: chrono_tz::Tz, fmt_string: &str) -> Resu
             unreachable!("We shouldn't have ambiguious time")
         }
     }
-}
-
-/// Extracts the parts of time from a given timetamp
-///
-/// Mainly used to get the hours and minutes for a timer.
-fn extract_timer_values() -> impl Function {
-    Box::new(move |args: &HashMap<String, Value>| {
-        let Some(time) = args.get("duration") else {
-            return Err(tera::Error::call_function(
-                "extract_timer_values",
-                anyhow!("timestamp argument not found"),
-            ));
-        };
-
-        let Some(part) = args.get("time_part") else {
-            return Err(tera::Error::call_function(
-                "extract_timer_values",
-                anyhow!("time_part argument not found"),
-            ));
-        };
-
-        let time = from_value::<i64>(time.clone())?;
-        let part = match from_value::<String>(part.clone())?.as_str() {
-            "hours" => TimerPart::Hour,
-            "minutes" => TimerPart::Min,
-            _ => panic!("Unexpected argument"),
-        };
-
-        let Ok(part) = extract_timer(part, time) else {
-            return Err(tera::Error::call_function(
-                "extract_timer_value",
-                anyhow!("Unexpected time_part argument"),
-            ));
-        };
-
-        Ok(to_value(part)?)
-    })
-}
-
-pub enum TimerPart {
-    Hour,
-    Min,
 }
 
 /// Extracts the minute and hour parts of the duration.

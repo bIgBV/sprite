@@ -28,7 +28,7 @@ impl Display for TagId {
 }
 
 impl TagId {
-    pub fn new(name: &str) -> Result<Self> {
+    pub(crate) fn new(name: &str) -> Result<Self> {
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
 
