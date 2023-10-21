@@ -16,12 +16,12 @@ use axum::{
     debug_handler,
     extract::{Path, State},
     http::{self, header, StatusCode},
-    response::{AppendHeaders, IntoResponse, Response},
+    response::{AppendHeaders, IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use timer_store::TimerStore;
+use timer_store::DataStore;
 
 use timer_utils::export_timers;
 use tower::ServiceBuilder;
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     // Load environment variables
     load_env::load_env()?;
 
-    let timer_store = TimerStore::new().await?;
+    let timer_store = DataStore::new().await?;
     let state = App { timer_store };
     // build our application with a route
     let app = Router::new()
@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
         .route("/timer/:timer_tag/:timezone", get(timers_with_tz))
         .route("/timer/toggle", post(toggle_timer))
         .route("/export/:tag/:timezone", get(export))
+        .route("/project/create", post(create_project))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
@@ -73,7 +74,17 @@ async fn main() -> Result<()> {
 
 #[derive(Debug, Clone)]
 pub struct App {
-    timer_store: TimerStore,
+    timer_store: DataStore,
+}
+
+#[derive(Debug, Deserialize)]
+struct FormProject {
+    name: String,
+}
+
+#[debug_handler]
+async fn create_project(State(app): State<App>) -> Redirect {
+    todo!()
 }
 
 /// Export all finished timers for a tag as a CSV file
@@ -138,7 +149,7 @@ struct UserContent {
 #[derive(Debug, Deserialize)]
 struct Toggle {
     #[serde(rename = "device-details")]
-    pub device_details: String,
+    pub _device_details: String,
 
     #[serde(rename = "timer-tag")]
     pub timer_tag: String,

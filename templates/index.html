@@ -34,7 +34,7 @@
                                 {% for timezone in timezones %}
                                 <li>
                                     <a class="dropdown-item" href="{{uri_base}}/timer/{{tag_name}}/{{timezone}}">
-                                        {{ current_timezone }}
+                                        {{ timezone }}
                                     </a>
                                 </li>
                                 {% endfor %}
@@ -42,6 +42,15 @@
                         </li>
                     </ul>
                 </div>
+                <form class="d-flex" id="project-form" action="/project/create" method="post">
+                    <div class="input-group">
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" placeholder="Project name"
+                                aria-label="Recipient's username" aria-describedby="button-addon2">
+                            <button class="btn btn-outline-secondary" type="submit" id="project-button">Create</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </nav>
 
@@ -50,56 +59,58 @@
         <div class="timers row">
             <div class="project">
                 {% for project in projects %}
-                <div plass="d-flex">
-                    <a href={{ project.download_link }} download={{ project.download_file_name }}>
-                        Export
-                    </a>
-                </div>
-                {{ project.name }}
-                <div class="col-md-12">
-                    <table class="table table-striped table-hover">
-                        <thead>
-                            <tr class="">
-                                <th scope="col">Start</th>
-                                <th scope="col">End</th>
-                                <th scope="col">Duration</th>
-                            </tr>
-                        </thead>
-                        <tbody class="table-group-divider">
-                            {% for timer in project.timers %}
-                            {% if timer.is_current %}
-                            <tr class="">
-                                <td id="currentStartTime">
-                                    {{ timer.start_time|to_human_date(current_timezone) }}
-                                </td>
-                                <td></td>
-                                <td class="timer-duration mx-auto m-1 p-2">
-                                    <span id="currentHours" class="time"></span>
-                                    <span class="separator">:</span>
-                                    <span id="currentMinutes" class="time"></span>
-                                    <span class="separator">:</span>
-                                    <span id="currentSeconds" class="time"></span>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr class="">
-                                <td class="start m-1 p-1">{{ timer.start_time|to_human_date(current_timezone) }}
-                                </td>
-                                <td class="end m-1 p-1">{{ timer.end_time|to_human_date(current_timezone) }}</td>
-                                <td id="timer-duration mx-auto m-1 p-2">
-                                    <span class="hours" id="time">
-                                        {{ timer.duration|extract_timer_values("hours")}}
-                                    </span>
-                                    <span class="separator">:</span>
-                                    <span class="minutes" id="time">
-                                        {{ timer.duration|extract_timer_values("minutes")}}
-                                    </span>
-                                </td>
-                            </tr>
-                            {% endif %}
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="container-md border rounded project-container">
+                    <div plass="d-flex">
+                        <a href={{ project.download_link }} download={{ project.download_file_name }}>
+                            Export
+                        </a>
+                    </div>
+                    {{ project.name }}
+                    <div class="col-md-12">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr class="">
+                                    <th scope="col">Start</th>
+                                    <th scope="col">End</th>
+                                    <th scope="col">Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody class="table-group-divider">
+                                {% for timer in project.timers %}
+                                {% if timer.is_current %}
+                                <tr class="">
+                                    <td id="currentStartTime">
+                                        {{ timer.start_time|to_human_date(current_timezone) }}
+                                    </td>
+                                    <td></td>
+                                    <td class="timer-duration mx-auto m-1 p-2">
+                                        <span id="currentHours" class="time"></span>
+                                        <span class="separator">:</span>
+                                        <span id="currentMinutes" class="time"></span>
+                                        <span class="separator">:</span>
+                                        <span id="currentSeconds" class="time"></span>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr class="">
+                                    <td class="start m-1 p-1">{{ &timer.start_time|to_human_date(current_timezone) }}
+                                    </td>
+                                    <td class="end m-1 p-1">{{ &timer.end_time()|to_human_date(current_timezone) }}</td>
+                                    <td id="timer-duration mx-auto m-1 p-2">
+                                        <span class="hours" id="time">
+                                            {{ &timer.duration|extract_timer_values("hours")}}
+                                        </span>
+                                        <span class="separator">:</span>
+                                        <span class="minutes" id="time">
+                                            {{ &timer.duration|extract_timer_values("minutes")}}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -169,6 +180,18 @@
         }
 
     </script>
+    <!-- <script>
+        // 1. Acquire a reference to our <form>.
+        //    This can also be done by setting <form name="blub">:
+        //       var form = document.forms.blub;
+        var form = document.getElementById("project-form");
+
+        // 2. Get a reference to our preferred element (link/button, see below) and
+        //    add an event listener for the "click" event.
+        document.getElementById("project-button").addEventListener("click", function () {
+            form.submit();
+        });
+    </script> -->
 </body>
 
 </html>

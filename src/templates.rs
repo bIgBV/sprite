@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use askama::Template;
 use askama_axum;
 use chrono::TimeZone;
@@ -41,28 +41,24 @@ impl MainPage {
         timers: Vec<Timer>,
         timezone: Option<String>,
     ) -> Result<Self> {
-        let timers: Result<Vec<Timer>, Error> =
-            timers.into_iter().map(Timer::update_end_time).collect();
-        let timers = timers?;
-
-        let timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
+        let current_timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
             from_render_timezone(&timezone)?
         } else {
             chrono_tz::US::Pacific
         };
 
-        let projects =
-            timers_to_project(timers, timezone.clone()).collect::<Result<Vec<Project>>>()?;
+        let projects = timers_to_project(timers, current_timezone.clone())
+            .collect::<Result<Vec<Project>>>()?;
 
         let timezones = DEFAULT_TIMEZONES
             .iter()
-            .filter(|tz| **tz != timezone)
+            .filter(|tz| **tz != current_timezone)
             .map(|tz| format!("{}", to_render_timezone(tz)))
             .collect();
 
         Ok(Self {
             tag_name,
-            current_timezone: format!("{}", to_render_timezone(&timezone)),
+            current_timezone: format!("{}", to_render_timezone(&current_timezone)),
             timezones,
             uri_base: uri_base(),
             projects,
@@ -78,7 +74,7 @@ fn timers_to_project(
 
     for timer in timers {
         project_map
-            .entry(timer.project.clone())
+            .entry("dummy".to_string())
             .and_modify(|val: &mut Vec<Timer>| val.push(timer))
             .or_insert(Vec::new());
     }
@@ -157,7 +153,7 @@ mod filters {
     pub fn to_human_date(timestamp: &i64, timezone: &str) -> ::askama::Result<String> {
         let timezone: chrono_tz::Tz = super::from_render_timezone(timezone)
             .map_err(|err| askama::Error::Custom(err.into()))?;
-        let formatted_time = super::format_time(*timestamp, timezone, "%a, %F %H:%M")
+        let formatted_time = super::format_time(timestamp, timezone, "%a, %F %H:%M")
             .map_err(|err| askama::Error::Custom(err.into()))?;
 
         Ok(formatted_time)
@@ -191,8 +187,8 @@ pub enum TimerPart {
 }
 
 #[instrument]
-pub fn format_time(time: i64, timezone: chrono_tz::Tz, fmt_string: &str) -> Result<String> {
-    match timezone.timestamp_opt(time, 0) {
+pub fn format_time(time: &i64, timezone: chrono_tz::Tz, fmt_string: &str) -> Result<String> {
+    match timezone.timestamp_opt(*time, 0) {
         chrono::LocalResult::None => Err(anyhow!("Unable to create DateTime object")),
         chrono::LocalResult::Single(time) => Ok(format!("{}", time.format(fmt_string))),
         chrono::LocalResult::Ambiguous(_, _) => {

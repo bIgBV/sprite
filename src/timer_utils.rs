@@ -21,8 +21,6 @@ pub(crate) fn export_timers(timers: Vec<Timer>, timezone: &str) -> Result<Writer
     let timezone: chrono_tz::Tz = templates::from_render_timezone(&timezone)?;
 
     for timer in timers {
-        let timer = timer.update_end_time()?;
-
         let duration = if timer.duration > 0 {
             let duration = timer.duration;
             format!(
@@ -35,8 +33,8 @@ pub(crate) fn export_timers(timers: Vec<Timer>, timezone: &str) -> Result<Writer
         };
 
         let export_timer = ExportRecord {
-            start_time: templates::format_time(timer.start_time, timezone, "%F %H:%M")?,
-            end_time: templates::format_time(timer.end_time, timezone, "%F %H:%M")?,
+            start_time: templates::format_time(&timer.start_time, timezone, "%F %H:%M")?,
+            end_time: templates::format_time(&timer.end_time(), timezone, "%F %H:%M")?,
             duration, // convert to minutes
         };
         writer.serialize(export_timer)?;

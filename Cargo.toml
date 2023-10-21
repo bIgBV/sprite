@@ -11,6 +11,7 @@ axum = { version = "0.6.20", features = [
     "headers",
     "json",
     "macros",
+    "form",
 ] }
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"

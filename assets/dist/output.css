@@ -1,3 +1,8 @@
 .timer-duration {
   min-width: 120px;
 }
+
+.project-container {
+  margin-bottom: 1em;
+  border-color: #ed9061;
+}
