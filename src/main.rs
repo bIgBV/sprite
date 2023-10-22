@@ -142,7 +142,7 @@ async fn render_timers(
 ) -> Result<Response, AppError> {
     debug!(timer_tag, "Rendering timers");
     let tag = timer_tag.into();
-    let timers = app.timer_store.get_timers_by_tag(&tag).await?;
+    let timers = app.timer_store.projects_by_tag(&tag).await?;
 
     let rendered_page = templates::render_timers(tag, timezone, timers)?;
     Ok(into_response(&rendered_page))

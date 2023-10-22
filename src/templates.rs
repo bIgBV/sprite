@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use anyhow::{anyhow, Result};
 use askama::Template;
@@ -7,7 +7,11 @@ use chrono::TimeZone;
 use serde::Serialize;
 use tracing::{debug, instrument};
 
-use crate::{timer_store::Timer, uid::TagId, uri_base};
+use crate::{
+    timer_store::{Project, Timer},
+    uid::TagId,
+    uri_base,
+};
 
 pub(crate) static DEFAULT_TIMEZONES: [chrono_tz::Tz; 4] = [
     chrono_tz::US::Pacific,
@@ -23,12 +27,12 @@ pub struct MainPage {
     tag_name: String,
     timezones: Vec<String>,
     uri_base: String,
-    projects: Vec<Project>,
+    projects: Vec<ProjectSection>,
 }
 
 /// Data structure for holding information related to a project
 #[derive(Debug, Serialize)]
-struct Project {
+struct ProjectSection {
     name: String,
     timers: Vec<Timer>,
     download_link: String,
@@ -38,7 +42,7 @@ struct Project {
 impl MainPage {
     pub(crate) fn new(
         tag_name: String,
-        timers: Vec<Timer>,
+        projects: HashMap<Project, Vec<Timer>>,
         timezone: Option<String>,
     ) -> Result<Self> {
         let current_timezone: chrono_tz::Tz = if let Some(timezone) = timezone {
@@ -47,8 +51,17 @@ impl MainPage {
             chrono_tz::US::Pacific
         };
 
-        let projects = timers_to_project(timers, current_timezone.clone())
-            .collect::<Result<Vec<Project>>>()?;
+        let mut project_sections = Vec::new();
+        for (project, timers) in projects {
+            let (file_name, link) =
+                download_information(&project.name, &tag_name, &current_timezone);
+            project_sections.push(ProjectSection {
+                name: project.name,
+                timers,
+                download_link: link,
+                download_file_name: file_name,
+            });
+        }
 
         let timezones = DEFAULT_TIMEZONES
             .iter()
@@ -61,50 +74,9 @@ impl MainPage {
             current_timezone: format!("{}", to_render_timezone(&current_timezone)),
             timezones,
             uri_base: uri_base(),
-            projects,
+            projects: project_sections,
         })
     }
-}
-
-fn timers_to_project(
-    timers: Vec<Timer>,
-    timezone: chrono_tz::Tz,
-) -> impl Iterator<Item = Result<Project>> {
-    let mut project_map = HashMap::new();
-
-    for timer in timers {
-        project_map
-            .entry("dummy".to_string())
-            .and_modify(|val: &mut Vec<Timer>| val.push(timer))
-            .or_insert(Vec::new());
-    }
-
-    project_map.into_iter().map(move |(key, val)| {
-        if val.len() == 0 {
-            return Ok(Project {
-                name: key,
-                timers: val,
-                download_link: String::new(),
-                download_file_name: String::new(),
-            });
-        }
-
-        let tag = val
-            .iter()
-            .take(1)
-            .map(|t| t.unique_id.as_ref())
-            .next()
-            .expect("There should be at least one timer");
-
-        let (file_name, link) = download_information(&key, &tag, &timezone);
-
-        Ok(Project {
-            name: key,
-            timers: val,
-            download_link: link,
-            download_file_name: file_name,
-        })
-    })
 }
 
 fn download_information(project: &str, tag: &str, timezone: &chrono_tz::Tz) -> (String, String) {
@@ -120,13 +92,13 @@ fn download_information(project: &str, tag: &str, timezone: &chrono_tz::Tz) -> (
     (file_name, link)
 }
 
-#[instrument(skip(timers))]
+#[instrument(skip(projects))]
 pub fn render_timers(
     tag: TagId,
     timezone: Option<String>,
-    timers: Vec<Timer>,
+    projects: HashMap<Project, Vec<Timer>>,
 ) -> anyhow::Result<MainPage> {
-    let page = MainPage::new(tag.as_ref().to_string(), timers, timezone)?;
+    let page = MainPage::new(tag.as_ref().to_string(), projects, timezone)?;
 
     debug!("Rendering timers for {} tag", page.tag_name);
     Ok(page)

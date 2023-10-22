@@ -1,6 +1,8 @@
 use std::{
+    collections::HashMap,
     env,
     fmt::Display,
+    hash::Hash,
     time::{Duration, SystemTime},
 };
 
@@ -18,7 +20,7 @@ pub(crate) struct DataStore {
 }
 
 /// A Timer object
-#[derive(Debug, sqlx::FromRow, Default, Serialize)]
+#[derive(Debug, sqlx::FromRow, Default, Serialize, PartialEq, Eq)]
 #[sqlx]
 pub struct Timer {
     /// The ID of this timer
@@ -49,20 +51,20 @@ enum IsCurrent {
     No = 0,
 }
 
-#[derive(Debug, sqlx::FromRow, Default, Serialize)]
+#[derive(Debug, sqlx::FromRow, Default, Serialize, PartialEq, Eq, Hash)]
 #[sqlx]
 pub struct Project {
     /// The ID of the Project
-    id: i64,
+    pub id: i64,
 
     /// The name of the Project
-    name: String,
+    pub name: String,
 
     /// Whether or not this is the current project for the given timer tag
-    is_current: bool,
+    pub is_current: bool,
 
     // The TagId this timer is associated with
-    unique_id: String,
+    pub unique_id: String,
 }
 
 impl Display for Project {
@@ -117,7 +119,7 @@ impl DataStore {
     /// Get the current project associated with the [`TagId`][crate::uid::TagId]
     ///
     /// Every project is associated with a **single** [`TagId`][crate::uid::TagId]
-    async fn current_project(&self, uid: &TagId) -> Result<Vec<Project>> {
+    async fn current_project(&self, uid: &TagId) -> Result<Project> {
         let tag_id = uid.as_ref();
         info!(tag_id, "Getting current project");
 
@@ -129,14 +131,17 @@ WHERE unique_id = ?1 AND is_current = ?2"#,
             tag_id,
             IsCurrent::Yes as i64
         )
-        .fetch_all(&self.pool)
+        .fetch_one(&self.pool)
         .await?;
 
         Ok(result)
     }
 
+    /// Gets all projects associated with [`TagId`][crate::uid::TagId]
+    #[instrument(skip(self))]
     async fn get_projects(&self, uid: &TagId) -> Result<Vec<Project>> {
         let tag_id = uid.as_ref();
+        info!(tag_id, "Getting projects");
         let result = sqlx::query_as!(
             Project,
             "SELECT * FROM PROJECTS WHERE unique_id = ?1",
@@ -147,10 +152,32 @@ WHERE unique_id = ?1 AND is_current = ?2"#,
         Ok(result)
     }
 
+    /// Creates a new project with the associated tag.
+    ///
+    /// If a project already exists, it ensures that the `is_current` status is handled properly.
     #[instrument(skip(self))]
     pub async fn create_project(&self, uid: &TagId, project_name: &str) -> Result<i64> {
         let tag_id = uid.as_ref();
         info!(tag_id, "Creating new project");
+
+        // Update the existing current project if necessary
+        match self.current_project(uid).await {
+            Ok(p) => {
+                sqlx::query!(
+                    r#"
+UPDATE projects
+SET is_current = ?1
+WHERE id = ?2;
+                    "#,
+                    IsCurrent::No as i64,
+                    p.id
+                )
+                .execute(&self.pool)
+                .await?;
+            }
+            Err(_) => {}
+        };
+
         let id = sqlx::query!(
             r#"
 INSERT INTO PROJECTS (UNIQUE_ID, IS_CURRENT, NAME)
@@ -179,19 +206,69 @@ WHERE id = ?1"#,
         .await?)
     }
 
-    pub(crate) async fn get_timers_by_tag(&self, timer_tag: &TagId) -> Result<Vec<Timer>> {
-        let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
+    /// Returns a map of projects->timers associated with given [`TagId`][crate::uid::TagId]
+    pub(crate) async fn projects_by_tag(
+        &self,
+        timer_tag: &TagId,
+    ) -> Result<HashMap<Project, Vec<Timer>>> {
+        let tag = timer_tag.as_ref();
+        info!(tag, "Generating project->timer map");
+        struct JoinResult {
+            project_name: String,
+            project_id: i64,
+            unique_id: String,
+            project_is_current: bool,
+            timer_id: i64,
+            start_time: i64,
+            timer_is_current: bool,
+            duration: i64,
+        }
+
+        let result = sqlx::query_as!(
+            JoinResult,
             r#"
-SELECT * FROM TIMERS
-WHERE unique_id = ?1
-ORDER BY start_time DESC
+SELECT 
+    p.id AS project_id,
+    p.name AS project_name, 
+    p.unique_id AS unique_id, 
+    p.is_current AS project_is_current, 
+    t.id AS timer_id,
+    t.start_time AS start_time, 
+    t.is_current AS timer_is_current, 
+    t.duration AS duration 
+FROM projects p 
+INNER JOIN timers t
+    ON p.id = t.project_id
+WHERE
+    p.unique_id = ?1;
             "#,
+            tag
         )
-        .bind(timer_tag.as_ref())
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(result)
+        let mut map = HashMap::new();
+
+        for row in result {
+            let project = Project {
+                name: row.project_name,
+                id: row.project_id,
+                is_current: row.project_is_current,
+                unique_id: row.unique_id.clone(),
+            };
+
+            let timer = Timer {
+                id: row.timer_id,
+                unique_id: row.unique_id,
+                project_id: project.id,
+                start_time: row.start_time,
+                is_current: row.timer_is_current,
+                duration: row.duration,
+            };
+            (map.entry(project).or_insert_with(|| vec![])).push(timer)
+        }
+
+        Ok(map)
     }
 
     #[instrument(skip(self))]
@@ -203,10 +280,6 @@ ORDER BY start_time DESC
         info!(tag, "Exporting timers");
 
         let current_project = self.current_project(timer_tag).await?;
-        let Some(current_project) = current_project.first() else {
-            error!(tag, "No current project found");
-            return Err(anyhow::anyhow!("Current tag not found"));
-        };
 
         let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
             r#"
@@ -232,19 +305,12 @@ ORDER BY start_time DESC
         let tag_id = uid.as_ref();
         info!(tag_id, "Creating a new timer");
 
-        let projects = self.current_project(uid).await?;
-
-        let current_project = match projects.into_iter().next() {
-            Some(p) => p,
-            None => {
+        let current_project = match self.current_project(uid).await {
+            Ok(p) => p,
+            Err(_) => {
                 debug!(tag_id, "No current project found, creating a default");
                 let _ = self.create_project(uid, "new-project").await?;
-                self.current_project(uid)
-                    .await?
-                    .into_iter()
-                    .take(1)
-                    .next()
-                    .expect("The just created project was not found")
+                self.current_project(uid).await?
             }
         };
 
@@ -272,8 +338,8 @@ VALUES (?1, ?2, ?3, ?4)"#,
         let rows = sqlx::query!(
             r#"
 UPDATE TIMERS
-set is_current = ?1, duration = ?2
-where id = ?3
+SET is_current = ?1, duration = ?2
+WHERE id = ?3
             "#,
             IsCurrent::No as i64,
             timer.duration,
@@ -384,7 +450,7 @@ mod tests {
 
     #[traced_test]
     #[tokio::test]
-    async fn get_tiemrs_returns_timers_by_tag_id() {
+    async fn projects_by_tag_success() {
         let store = setup().await.unwrap();
         let uid = TagId::new("test-tag").unwrap();
         store.create_project(&uid, "test-project").await.unwrap();
@@ -394,9 +460,9 @@ mod tests {
             store.toggle_current(&uid).await.unwrap();
         }
 
-        let timers = store.get_timers_by_tag(&uid).await.unwrap();
+        let timers = store.projects_by_tag(&uid).await.unwrap();
 
-        assert_eq!(timers.len(), 20);
+        assert_eq!(timers.values().len(), 20);
     }
 
     #[traced_test]
