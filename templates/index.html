@@ -42,10 +42,10 @@
                         </li>
                     </ul>
                 </div>
-                <form class="d-flex" id="project-form" action="/project/create" method="post">
+                <form class="d-flex" id="project-form" action="/project/{{tag_name}}/create" method="post">
                     <div class="input-group">
                         <div class="input-group mb-3">
-                            <input type="text" class="form-control" placeholder="Project name"
+                            <input type="text" name="name" class="form-control" placeholder="Project name"
                                 aria-label="Recipient's username" aria-describedby="button-addon2">
                             <button class="btn btn-outline-secondary" type="submit" id="project-button">Create</button>
                         </div>

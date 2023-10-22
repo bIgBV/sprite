@@ -19,7 +19,7 @@ pub(crate) struct DataStore {
 
 /// A Timer object
 #[derive(Debug, sqlx::FromRow, Default, Serialize)]
-#[sqlx(rename_all = "SCREAMING_SNAKE_CASE")]
+#[sqlx]
 pub struct Timer {
     /// The ID of this timer
     id: i64,
@@ -117,7 +117,7 @@ impl DataStore {
     /// Get the current project associated with the [`TagId`][crate::uid::TagId]
     ///
     /// Every project is associated with a **single** [`TagId`][crate::uid::TagId]
-    async fn current_project(&self, uid: &TagId) -> Result<Project> {
+    async fn current_project(&self, uid: &TagId) -> Result<Vec<Project>> {
         let tag_id = uid.as_ref();
         info!(tag_id, "Getting current project");
 
@@ -129,7 +129,7 @@ WHERE unique_id = ?1 AND is_current = ?2"#,
             tag_id,
             IsCurrent::Yes as i64
         )
-        .fetch_one(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
         Ok(result)
@@ -148,7 +148,7 @@ WHERE unique_id = ?1 AND is_current = ?2"#,
     }
 
     #[instrument(skip(self))]
-    async fn create_project(&self, uid: &TagId, project_name: &str) -> Result<i64> {
+    pub async fn create_project(&self, uid: &TagId, project_name: &str) -> Result<i64> {
         let tag_id = uid.as_ref();
         info!(tag_id, "Creating new project");
         let id = sqlx::query!(
@@ -168,12 +168,13 @@ VALUES (?1, ?2, ?3)"#,
 
     #[cfg(test)]
     async fn get_timer(&self, timer_id: i64) -> Result<Timer> {
-        Ok(sqlx::query_as::<sqlx::sqlite::Sqlite, Timer>(
+        Ok(sqlx::query_as!(
+            Timer,
             r#"
 SELECT * FROM TIMERS
 WHERE id = ?1"#,
+            timer_id,
         )
-        .bind(timer_id)
         .fetch_one(&self.pool)
         .await?)
     }
@@ -202,6 +203,10 @@ ORDER BY start_time DESC
         info!(tag, "Exporting timers");
 
         let current_project = self.current_project(timer_tag).await?;
+        let Some(current_project) = current_project.first() else {
+            error!(tag, "No current project found");
+            return Err(anyhow::anyhow!("Current tag not found"));
+        };
 
         let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
             r#"
@@ -219,12 +224,30 @@ ORDER BY start_time DESC
     }
 
     /// Creates a new timer with the start time set to the unix epoch in UTC
+    ///
+    /// If the current project does not exist for the given
+    /// [`TagId`][crate::uid::TagId] a new project is created.
     #[instrument(skip(self))]
     async fn create_timer(&self, uid: &TagId) -> Result<i64> {
         let tag_id = uid.as_ref();
         info!(tag_id, "Creating a new timer");
 
-        let project = self.current_project(uid).await?;
+        let projects = self.current_project(uid).await?;
+
+        let current_project = match projects.into_iter().next() {
+            Some(p) => p,
+            None => {
+                debug!(tag_id, "No current project found, creating a default");
+                let _ = self.create_project(uid, "new-project").await?;
+                self.current_project(uid)
+                    .await?
+                    .into_iter()
+                    .take(1)
+                    .next()
+                    .expect("The just created project was not found")
+            }
+        };
+
         let start_epoch = chrono::Utc::now().timestamp();
 
         let id = sqlx::query!(
@@ -234,7 +257,7 @@ VALUES (?1, ?2, ?3, ?4)"#,
             tag_id,
             IsCurrent::Yes as i64,
             start_epoch,
-            project.id
+            current_project.id
         )
         .execute(&self.pool)
         .await?
@@ -338,6 +361,8 @@ mod tests {
     async fn toggle_timer_creates_new_current_timer() {
         let uid = TagId::new("test-tag").unwrap();
         let store = setup().await.unwrap();
+        store.create_project(&uid, "test-project").await.unwrap();
+
         let result = store.toggle_current(&uid).await.unwrap();
         assert_eq!(result, 1);
 
@@ -362,6 +387,7 @@ mod tests {
     async fn get_tiemrs_returns_timers_by_tag_id() {
         let store = setup().await.unwrap();
         let uid = TagId::new("test-tag").unwrap();
+        store.create_project(&uid, "test-project").await.unwrap();
 
         for _ in 0..20 {
             store.toggle_current(&uid).await.unwrap();
@@ -378,6 +404,7 @@ mod tests {
     async fn get_exportable_timers_by_tag_returns_only_complete_timers() {
         let store = setup().await.unwrap();
         let uid = TagId::new("test-tag").unwrap();
+        store.create_project(&uid, "test-project").await.unwrap();
 
         for _ in 0..20 {
             store.toggle_current(&uid).await.unwrap();
@@ -396,6 +423,7 @@ mod tests {
     async fn timer_update_end_time_success() {
         let store = setup().await.unwrap();
         let uid = TagId::new("test-tag").unwrap();
+        store.create_project(&uid, "test-project").await.unwrap();
 
         // Start and stop a timer after sleeping for 2 seconds
         store.toggle_current(&uid).await.unwrap();

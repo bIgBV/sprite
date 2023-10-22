@@ -18,7 +18,7 @@ use axum::{
     http::{self, header, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
     routing::{get, post},
-    Json, Router,
+    Form, Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use timer_store::DataStore;
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         .route("/timer/:timer_tag/:timezone", get(timers_with_tz))
         .route("/timer/toggle", post(toggle_timer))
         .route("/export/:tag/:timezone", get(export))
-        .route("/project/create", post(create_project))
+        .route("/project/:tag/create", post(create_project))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
@@ -78,13 +78,21 @@ pub struct App {
 }
 
 #[derive(Debug, Deserialize)]
-struct FormProject {
+struct ProjectForm {
     name: String,
 }
 
 #[debug_handler]
-async fn create_project(State(app): State<App>) -> Redirect {
-    todo!()
+async fn create_project(
+    State(app): State<App>,
+    Path(timer_tag): Path<String>,
+    Form(project): Form<ProjectForm>,
+) -> Result<Redirect, AppError> {
+    info!(timer_tag, "Creating new project for timer_tag");
+    let tag = timer_tag.into();
+    let _ = app.timer_store.create_project(&tag, &project.name).await?;
+
+    Ok(Redirect::to(&format!("/timer/{}", tag.as_ref())))
 }
 
 /// Export all finished timers for a tag as a CSV file
