@@ -93,16 +93,16 @@
                                 </tr>
                                 {% else %}
                                 <tr class="">
-                                    <td class="start m-1 p-1">{{ &timer.start_time|to_human_date(current_timezone) }}
+                                    <td class="start m-1 p-1">{{ timer.start_time|to_human_date(current_timezone) }}
                                     </td>
-                                    <td class="end m-1 p-1">{{ &timer.end_time()|to_human_date(current_timezone) }}</td>
+                                    <td class="end m-1 p-1">{{ timer|end_time_to_human_time(current_timezone) }}</td>
                                     <td id="timer-duration mx-auto m-1 p-2">
                                         <span class="hours" id="time">
-                                            {{ &timer.duration|extract_timer_values("hours")}}
+                                            {{ timer.duration|extract_timer_values("hours")}}
                                         </span>
                                         <span class="separator">:</span>
                                         <span class="minutes" id="time">
-                                            {{ &timer.duration|extract_timer_values("minutes")}}
+                                            {{ timer.duration|extract_timer_values("minutes")}}
                                         </span>
                                     </td>
                                 </tr>

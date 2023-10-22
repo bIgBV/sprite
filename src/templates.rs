@@ -148,12 +148,18 @@ pub(crate) fn from_render_timezone(timezone: &str) -> Result<chrono_tz::Tz> {
 mod filters {
     use std::{fmt::Display, num::ParseIntError};
 
+    use crate::timer_store::Timer;
+
     use super::TimerPart;
 
-    pub fn to_human_date(timestamp: &i64, timezone: &str) -> ::askama::Result<String> {
+    pub fn end_time_to_human_time(timer: &Timer, timezone: &str) -> askama::Result<String> {
+        to_human_date(&(timer.start_time + timer.duration), timezone)
+    }
+
+    pub fn to_human_date(timestamp: &i64, timezone: &str) -> askama::Result<String> {
         let timezone: chrono_tz::Tz = super::from_render_timezone(timezone)
             .map_err(|err| askama::Error::Custom(err.into()))?;
-        let formatted_time = super::format_time(timestamp, timezone, "%a, %F %H:%M")
+        let formatted_time = super::format_time(&timestamp, timezone, "%a, %F %H:%M")
             .map_err(|err| askama::Error::Custom(err.into()))?;
 
         Ok(formatted_time)
@@ -162,7 +168,7 @@ mod filters {
     /// Extracts the parts of time from a given timetamp
     ///
     /// Mainly used to get the hours and minutes for a timer.
-    pub fn extract_timer_values<T: Display>(time: T, part: &str) -> ::askama::Result<String> {
+    pub fn extract_timer_values<T: Display>(time: T, part: &str) -> askama::Result<String> {
         let time = time
             .to_string()
             .parse()
