@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT \n    p.id AS project_id,\n    p.name AS project_name, \n    p.created AS created,\n    p.unique_id AS unique_id, \n    p.is_current AS project_is_current, \n    t.id AS timer_id,\n    t.start_time AS start_time, \n    t.is_current AS timer_is_current, \n    t.duration AS duration \nFROM projects p \nLEFT JOIN timers t\n    ON p.id = t.project_id\nWHERE\n    p.unique_id = ?1\nORDER BY p.created DESC;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "project_id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "project_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "unique_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "project_is_current",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "timer_id",
+        "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "start_time",
+        "ordinal": 6,
+        "type_info": "Int64"
+      },
+      {
+        "name": "timer_is_current",
+        "ordinal": 7,
+        "type_info": "Bool"
+      },
+      {
+        "name": "duration",
+        "ordinal": 8,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "d555dc3b49468fbb34f4d1f4c6ed91f4fdb0a1aca212e13f7c7499a133fd1799"
+}

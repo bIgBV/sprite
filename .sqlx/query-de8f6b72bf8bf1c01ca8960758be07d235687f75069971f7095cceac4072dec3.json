@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO TIMERS (UNIQUE_ID, IS_CURRENT, START_TIME, PROJECT_ID)\nVALUES (?1, ?2, ?3, ?4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "de8f6b72bf8bf1c01ca8960758be07d235687f75069971f7095cceac4072dec3"
+}

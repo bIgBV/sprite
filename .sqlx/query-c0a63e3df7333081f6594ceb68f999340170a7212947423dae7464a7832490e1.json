@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT * FROM TIMERS\nWHERE project_id = ?1 AND is_current = ?2\nORDER BY start_time DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "unique_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "start_time",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "is_current",
+        "ordinal": 3,
+        "type_info": "Bool"
+      },
+      {
+        "name": "duration",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "project_id",
+        "ordinal": 5,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c0a63e3df7333081f6594ceb68f999340170a7212947423dae7464a7832490e1"
+}

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT * FROM PROJECTS\nWHERE unique_id = ?1 AND is_current = ?2",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "unique_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "created",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "is_current",
+        "ordinal": 4,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "be2ee6771bee406f358b7a1db6a878e193cfb073a216976a26bb58675a0fb852"
+}
