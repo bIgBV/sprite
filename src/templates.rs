@@ -1,8 +1,11 @@
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use askama::Template;
+
+#[allow(unused_imports)]
 use askama_axum;
+
 use chrono::TimeZone;
 use serde::Serialize;
 use tracing::{debug, instrument};
@@ -36,7 +39,6 @@ struct ProjectSection {
     name: String,
     timers: Vec<Timer>,
     download_link: String,
-    download_file_name: String,
 }
 
 impl MainPage {
@@ -53,13 +55,17 @@ impl MainPage {
 
         let mut project_sections = Vec::new();
         for (project, timers) in projects {
-            let (file_name, link) =
-                download_information(&project.name, &tag_name, &current_timezone);
+            let link = format!(
+                "{}/export/{}/{}",
+                uri_base(),
+                to_render_timezone(&current_timezone),
+                project.id,
+            );
+
             project_sections.push(ProjectSection {
                 name: project.name,
                 timers,
                 download_link: link,
-                download_file_name: file_name,
             });
         }
 
@@ -77,19 +83,6 @@ impl MainPage {
             projects: project_sections,
         })
     }
-}
-
-fn download_information(project: &str, tag: &str, timezone: &chrono_tz::Tz) -> (String, String) {
-    let file_name = format!("{}.csv", project);
-    let link = format!(
-        "{}/export/{}/{}/{}",
-        uri_base(),
-        tag,
-        file_name,
-        to_render_timezone(timezone)
-    );
-
-    (file_name, link)
 }
 
 #[instrument(skip(projects))]

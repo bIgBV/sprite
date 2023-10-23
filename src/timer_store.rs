@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::Result;
 
+use chrono::Utc;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use tracing::{debug, error, info, instrument};
@@ -65,6 +66,9 @@ pub struct Project {
 
     // The TagId this timer is associated with
     pub unique_id: String,
+
+    /// When this project was created
+    created: i64,
 }
 
 impl Display for Project {
@@ -178,13 +182,15 @@ WHERE id = ?2;
             Err(_) => {}
         };
 
+        let now = Utc::now().timestamp();
         let id = sqlx::query!(
             r#"
-INSERT INTO PROJECTS (UNIQUE_ID, IS_CURRENT, NAME)
-VALUES (?1, ?2, ?3)"#,
+INSERT INTO PROJECTS (unique_id, is_current, name, created)
+VALUES (?1, ?2, ?3, ?4)"#,
             tag_id,
             IsCurrent::Yes as i64,
-            project_name
+            project_name,
+            now
         )
         .execute(&self.pool)
         .await?
@@ -216,12 +222,13 @@ WHERE id = ?1"#,
         struct JoinResult {
             project_name: String,
             project_id: i64,
+            created: i64,
             unique_id: String,
             project_is_current: bool,
-            timer_id: i64,
-            start_time: i64,
-            timer_is_current: bool,
-            duration: i64,
+            timer_id: Option<i64>,
+            start_time: Option<i64>,
+            timer_is_current: Option<bool>,
+            duration: Option<i64>,
         }
 
         let result = sqlx::query_as!(
@@ -230,6 +237,7 @@ WHERE id = ?1"#,
 SELECT 
     p.id AS project_id,
     p.name AS project_name, 
+    p.created AS created,
     p.unique_id AS unique_id, 
     p.is_current AS project_is_current, 
     t.id AS timer_id,
@@ -237,10 +245,11 @@ SELECT
     t.is_current AS timer_is_current, 
     t.duration AS duration 
 FROM projects p 
-INNER JOIN timers t
+LEFT JOIN timers t
     ON p.id = t.project_id
 WHERE
-    p.unique_id = ?1;
+    p.unique_id = ?1
+ORDER BY p.created DESC;
             "#,
             tag
         )
@@ -255,41 +264,48 @@ WHERE
                 id: row.project_id,
                 is_current: row.project_is_current,
                 unique_id: row.unique_id.clone(),
+                created: row.created,
             };
 
-            let timer = Timer {
-                id: row.timer_id,
-                unique_id: row.unique_id,
-                project_id: project.id,
-                start_time: row.start_time,
-                is_current: row.timer_is_current,
-                duration: row.duration,
-            };
-            (map.entry(project).or_insert_with(|| vec![])).push(timer)
+            // timer_id is the primary key in the timer table and cannot be 0
+            if row.timer_id.is_some() && row.timer_id.is_some_and(|id| id > 0) {
+                let timer = Timer {
+                    id: row.timer_id.expect("Timer values should be present"),
+                    unique_id: row.unique_id,
+                    project_id: project.id,
+                    start_time: row.start_time.expect("Timer values should be present"),
+                    is_current: row
+                        .timer_is_current
+                        .expect("Timer values should be present"),
+                    duration: row.duration.expect("Timer values should be present"),
+                };
+                (map.entry(project).or_insert_with(|| vec![])).push(timer)
+            } else {
+                // When a project doesn't have any timers
+                map.insert(project, vec![]);
+            }
         }
 
         Ok(map)
     }
 
     #[instrument(skip(self))]
-    pub(crate) async fn get_exportable_timers_by_tag(
+    pub(crate) async fn exportable_timers_by_project(
         &self,
-        timer_tag: &TagId,
+        project_id: &i64,
     ) -> Result<Vec<Timer>> {
-        let tag = timer_tag.as_ref();
-        info!(tag, "Exporting timers");
+        info!(project_id, "Exporting timers");
 
-        let current_project = self.current_project(timer_tag).await?;
-
-        let result = sqlx::query_as::<sqlx::Sqlite, Timer>(
+        let result = sqlx::query_as!(
+            Timer,
             r#"
 SELECT * FROM TIMERS
-WHERE unique_id = ?1 AND IS_CURRENT = 0 AND PROJECT_ID = ?2
+WHERE project_id = ?1 AND is_current = ?2
 ORDER BY start_time DESC
             "#,
+            project_id,
+            IsCurrent::No as i64
         )
-        .bind(tag)
-        .bind(current_project.id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -479,7 +495,7 @@ mod tests {
 
         store.toggle_current(&uid).await.unwrap();
 
-        let timers = store.get_exportable_timers_by_tag(&uid).await.unwrap();
+        let timers = store.exportable_timers_by_project(&uid).await.unwrap();
 
         assert_eq!(timers.len(), 20);
     }

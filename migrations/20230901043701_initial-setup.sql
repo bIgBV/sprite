@@ -16,5 +16,6 @@ CREATE TABLE IF NOT EXISTS PROJECTS (
     id          INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     name        TEXT NOT NULL,
     unique_id   TEXT NOT NULL,
+    created     INTEGER NOT NULL,
     is_current  BOOLEAN NOT NULL CHECK (is_current IN (0, 1)) -- Boolean value 0 false 1 true
 );

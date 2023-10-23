@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         .route("/timer/:timer_tag", get(timers))
         .route("/timer/:timer_tag/:timezone", get(timers_with_tz))
         .route("/timer/toggle", post(toggle_timer))
-        .route("/export/:tag/:timezone", get(export))
+        .route("/export/:project_id/:timezone", get(export))
         .route("/project/:tag/create", post(create_project))
         .nest_service("/assets", ServeDir::new("assets/dist"))
         .with_state(state)
@@ -99,13 +99,13 @@ async fn create_project(
 #[debug_handler]
 async fn export(
     State(app): State<App>,
-    Path((filename, timezone)): Path<(String, String)>,
+    Path((timezone, project_id)): Path<(String, i64)>,
 ) -> Result<impl IntoResponse, AppError> {
     // Remove the file extension
-    let tag = filename.split(".").collect::<Vec<&str>>()[0]
-        .to_string()
-        .into();
-    let timers = app.timer_store.get_exportable_timers_by_tag(&tag).await?;
+    let timers = app
+        .timer_store
+        .exportable_timers_by_project(&project_id)
+        .await?;
 
     let writer = export_timers(timers, &timezone)?;
     let body = Full::new(Bytes::from(writer.into_inner()?));
