@@ -470,6 +470,7 @@ mod tests {
         let store = setup().await.unwrap();
         let uid = TagId::new("test-tag").unwrap();
         store.create_project(&uid, "test-project").await.unwrap();
+        let current_project = store.current_project(&uid).await.unwrap();
 
         for _ in 0..20 {
             store.toggle_current(&uid).await.unwrap();
@@ -477,8 +478,7 @@ mod tests {
         }
 
         let timers = store.projects_by_tag(&uid).await.unwrap();
-
-        assert_eq!(timers.values().len(), 20);
+        assert_eq!(timers.get(&current_project).unwrap().len(), 20);
     }
 
     #[traced_test]
@@ -495,7 +495,7 @@ mod tests {
 
         store.toggle_current(&uid).await.unwrap();
 
-        let timers = store.exportable_timers_by_project(&uid).await.unwrap();
+        let timers = store.exportable_timers_by_project(&1).await.unwrap();
 
         assert_eq!(timers.len(), 20);
     }
